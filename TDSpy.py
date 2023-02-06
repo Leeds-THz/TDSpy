@@ -32,6 +32,29 @@ from newportxps import NewportXPS
 
 
 ####################################################################
+# XPS FUNCTIONS
+####################################################################
+
+def ConvertPsToMm(ps, zeroOffset, passes, reverse):
+	c = 0.3 # Speed of light in mm/ps
+
+	mm = (ps + zeroOffset) * c * passes
+
+	if  reverse:
+		return -mm
+	else :
+		return mm
+
+def InitXPSGathering(xps, stage, startDelay, zeroOffset, passes, reverse):
+	# Move stage to start pos
+	xps.move_stage(stage, ConvertPsToMm(startDelay, zeroOffset, passes, reverse))
+
+	# Set stage velocity based on required THz bandwidth
+	# xps.set_velocity(stage, velocity, acceleration, min_jerk, max_jerk)
+
+	
+
+####################################################################
 # THz Procedure
 ####################################################################
 
