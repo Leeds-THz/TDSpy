@@ -46,17 +46,16 @@ def ChooseSaveFile():
 ####################################################################
 # THz Procedures
 ####################################################################
-class XPSGatheringProcedure(Procedure):
+class TDSProcedure(Procedure):
 	# Scan Type
 	scanType = ListParameter('Scan Type', choices=['XPS - Delay', 'Gathering', 'Goto Delay', 'Goto Cursor'])
-
 
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', units='ps', default=0)
 	stepDelay = FloatParameter('Step Size', units='ps', default=0.01)
 	stopDelay = FloatParameter('End Step', units='ps', default=10)
 
-	thzBandwidth = FloatParameter('THz Bandwidth', units='THz', default=15)
+	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition='Gathering', units='THz', default=15)
 
 	# XPS Inputs
 	xpsIP = Parameter('XPS IP', default="192.168.0.254")
@@ -106,9 +105,8 @@ class XPSGatheringProcedure(Procedure):
 			log.error("XPS initialisation failed")
 			log.error(str(e))
 			log.error(str(e.args))
-		
 
-	def execute(self):
+	def executeGathering(self):
 		log.info("Initialising gathering")
 		err, msg = xpsHelp.InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
 		
@@ -116,7 +114,6 @@ class XPSGatheringProcedure(Procedure):
 		if err != 0:
 			# Get XPS error string
 			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			# self.update_status(Procedure.FAILED)
 			self.emit('status', Procedure.FAILED)
 			return
 
@@ -129,7 +126,6 @@ class XPSGatheringProcedure(Procedure):
 		if err != 0:
 			# Get XPS error string
 			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			# self.update_status(Procedure.FAILED)
 			self.emit('status', Procedure.FAILED)
 			return
 
@@ -147,14 +143,18 @@ class XPSGatheringProcedure(Procedure):
 		for i in range(len(data["Delay"])):
 			curData = {'Delay': data["Delay"][i], 'X': data["X"][i], 'Y': data["Y"][i]}
 			self.emit('results', curData)
+	
+	def execute(self):
+		if self.scanType == 'Gathering':
+			self.executeGathering()
 
 ####################################################################
 # Main Window
 ####################################################################
-class GatheringWindow(ManagedWindow):
+class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
-			procedure_class=XPSGatheringProcedure,
+			procedure_class=TDSProcedure,
 			inputs=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen'],
 			displays=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen'],
 			x_axis='Delay',
@@ -183,6 +183,6 @@ class GatheringWindow(ManagedWindow):
 
 if __name__ == "__main__":
 	app = QtWidgets.QApplication(sys.argv)
-	window = GatheringWindow()
+	window = TDSWindow()
 	window.show()
 	sys.exit(app.exec())
