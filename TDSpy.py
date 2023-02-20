@@ -24,7 +24,7 @@ from pymeasure.log import console_log
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
 from pymeasure.experiment import Procedure, Results
-from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter
+from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
 import numpy as np
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
@@ -104,28 +104,56 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
 
 	# Set velocity to max
-	xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
 
 	# Move stage to start pos
 	xps.move_stage(stage, ConvertPsToMm(startDelay, zeroOffset, passes, reverse))
 
 	# Set stage velocity based on required THz bandwidth
-	xps._xps.PositionerSGammaParametersSet(xps._sid, stage, scanStageSpeed, maxVeloAcc[2], 0.005, 0.05)
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, scanStageSpeed, maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
 
 	# Reset gathering
 	err, msg = xps._xps.GatheringReset(xps._sid)
 
+	# Check for errors
+	if err != 0:
+		return err, msg
+
 	# Set gathering config
 	err, msg = xps._xps.GatheringConfigurationSet(xps._sid, ["{}.CurrentPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2"])
+
+	# Check for errors
+	if err != 0:
+		return err, msg
 
 	# Set event trigger
 	err, msg = xps._xps.EventExtendedConfigurationTriggerSet(xps._sid, ("{}.SGamma.MotionStart".format(stage),), ("",), ("",), ("",), ("",))
 
+	# Check for errors
+	if err != 0:
+		return err, msg
+
 	# Set event action
 	err, msg = xps._xps.EventExtendedConfigurationActionSet(xps._sid, ("GatheringRun",), (str(expectedPoints),), (str(xpsDivisor),), ("",), ("",))
 
+	# Check for errors
+	if err != 0:
+		return err, msg
+
 	# Event ext. Start
 	err, msg = xps._xps.EventExtendedStart(xps._sid)
+
+	# Check for errors
+	return err, msg
 	
 	
 
@@ -136,8 +164,14 @@ def RunGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passe
 	# Gathering stop + save
 	err, msg = xps._xps.GatheringStopAndSave(xps._sid)
 
+	# Check for errors
+	if err != 0:
+		return err, msg
+
 	# Get gathering file
 	GetGatheringFile(xps, localFile)
+
+	return err, msg
 	
 def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, lockinSensitivity, localFile = None, headerLines = 2):
 	if localFile == None:
@@ -170,12 +204,25 @@ def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse,
 
 	return {"Delay": delayInterp, "X": xInterp, "Y": yInterp}
 
+def GetXPSErrorString(xps, errorCode):
+	# Check for errors
+	if errorCode != 0:
+		# Get XPS error string
+		_, errString = xps._xps.ErrorStringGet(xps._sid, errorCode)
+
+		return errString
+	else:
+		return "No XPS Error"
 
 
 ####################################################################
 # THz Procedures
 ####################################################################
 class XPSGatheringProcedure(Procedure):
+	# Scan Type
+	scanType = ListParameter('Scan Type', choices=['XPS - Delay', 'Gathering', 'Goto Delay', 'Goto Cursor'])
+
+
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', units='ps', default=0)
 	stepDelay = FloatParameter('Step Size', units='ps', default=0.01)
@@ -192,8 +239,10 @@ class XPSGatheringProcedure(Procedure):
 
 	# Lockin Inputs
 	lockinGPIB = IntegerParameter('Lockin GPIB', default=20)
-	lockinWait = FloatParameter('Wait Time', units='s', default=20e-3)
-	lockinSen = FloatParameter('Sensitivity', units='mV', default=100)
+	lockinControl = BooleanParameter('Control Lockin', default=False)
+	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
+	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
+	
 	
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
 
@@ -206,39 +255,56 @@ class XPSGatheringProcedure(Procedure):
 			self.lockin = DSP7265("GPIB::{}".format(self.lockinGPIB))
 			sleep(0.1)
 
-			# Set time constant
-			log.info("Setting the Time Constant to %s A" % self.lockinWait)
-			self.lockin.time_constant=self.lockinWait
-			sleep(0.1)
+			if self.lockinControl:
+				# Set time constant
+				log.info("Setting the Time Constant to %s A" % self.lockinWait)
+				self.lockin.time_constant=self.lockinWait
+				sleep(0.1)
 
-			# Set sensitivity
-			log.info("Setting the sensitivity to %s A" % self.lockinSen)
-			self.lockin.sensitivity=(self.lockinSen / 1000)
-			sleep(0.1)
+				# Set sensitivity
+				log.info("Setting the sensitivity to %s A" % self.lockinSen)
+				self.lockin.sensitivity=(self.lockinSen / 1000)
+				sleep(0.1)
 
 		except Exception as e:
-			log.info("Lockin initialisation failed")
-			log.info(str(e))
-			log.info(str(e.args))
+			log.error("Lockin initialisation failed")
+			log.error(str(e))
+			log.error(str(e.args))
 
 		# Try and connect to XPS
 		try:
 			self.xps = InitXPS(self.xpsIP)
 		except Exception as e:
-			log.info("XPS initialisation failed")
-			log.info(str(e))
-			log.info(str(e.args))
+			log.error("XPS initialisation failed")
+			log.error(str(e))
+			log.error(str(e.args))
 		
 
 	def execute(self):
 		log.info("Initialising gathering")
-		InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
+		err, msg = InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
 		
+		# Check for errors
+		if err != 0:
+			# Get XPS error string
+			log.error(GetXPSErrorString(self.xps, err))
+			# self.update_status(Procedure.FAILED)
+			self.emit('status', Procedure.FAILED)
+			return
+
 		self.emit('progress', 5)
 
 		log.info("Running gathering")
-		RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+		err, msg = RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
 		
+		# Check for errors
+		if err != 0:
+			# Get XPS error string
+			log.error(GetXPSErrorString(self.xps, err))
+			# self.update_status(Procedure.FAILED)
+			self.emit('status', Procedure.FAILED)
+			return
+
 		self.emit('progress', 90)
 
 		log.info("Downloading gathering file")
@@ -261,17 +327,23 @@ class GatheringWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=XPSGatheringProcedure,
-			inputs=['startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinWait','lockinSen'],
-			displays=['startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinWait','lockinSen'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen'],
+			displays=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen'],
 			x_axis='Delay',
-			y_axis='X'
+			y_axis='X',
+			sequencer=True,
+            sequencer_inputs=['startDelay', 'stopDelay'],
+			hide_groups = True
 			)
 		self.setWindowTitle('THz Scan')
 
-	def queue(self):
+	def queue(self, procedure=None):
 		filename = ChooseSaveFile()
 
-		procedure = self.make_procedure()
+		if procedure is None:
+			procedure = self.make_procedure()
+
+		# procedure = self.make_procedure()
 		results = Results(procedure, filename)
 		experiment = self.new_experiment(results)
 
