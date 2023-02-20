@@ -8,7 +8,7 @@ import csv
 import numpy as np
 
 ####################################################################
-# XPS FUNCTIONS
+# UNIT FUNCTIONS
 ####################################################################
 
 def ConvertPsToMm(ps, zeroOffset, passes, reverse):
@@ -34,12 +34,20 @@ def GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes):
 	
 	return maxStageSpeed * 0.3 * (1 / passes) # mm/s
 
+####################################################################
+# GENERAL FUNCTIONS
+####################################################################
+
 def InitXPS(ip, user = "Administrator", password = "Administrator"):
 	os.system("ssh-keyscan {} > {}\\.ssh\\known_hosts.".format(ip, os.path.expanduser('~')))
 
 	xps = NewportXPS(ip, username=user, password=password)
 
 	return xps
+
+####################################################################
+# GATHERING FUNCTIONS
+####################################################################
 
 def GetGatheringFile(xps, localFile = None):
 	# Delete existing gathering file
@@ -117,7 +125,6 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 	# Check for errors
 	return err, msg
 	
-	
 
 def RunGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, localFile = None):
 	# Move to end position
@@ -175,3 +182,23 @@ def GetXPSErrorString(xps, errorCode):
 		return errString
 	else:
 		return "No XPS Error"
+
+####################################################################
+# STEP SCAN FUNCTIONS
+####################################################################
+
+def InitXPSStepScan(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse):
+	# Get max velocity settings
+	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
+
+	# Set velocity to max
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Move stage to start pos
+	xps.move_stage(stage, ConvertPsToMm(startDelay, zeroOffset, passes, reverse))
+
+	return err, msg

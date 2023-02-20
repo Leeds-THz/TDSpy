@@ -31,6 +31,7 @@ from pymeasure.instruments.signalrecovery import DSP7265
 from newportxps import NewportXPS
 import tkinter as tk
 from tkinter import filedialog
+import numpy as np
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -48,7 +49,7 @@ def ChooseSaveFile():
 ####################################################################
 class TDSProcedure(Procedure):
 	# Scan Type
-	scanType = ListParameter('Scan Type', choices=['XPS - Delay', 'Gathering', 'Goto Delay', 'Goto Cursor'])
+	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Goto Cursor'])
 
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', units='ps', default=0)
@@ -106,7 +107,60 @@ class TDSProcedure(Procedure):
 			log.error(str(e))
 			log.error(str(e.args))
 
-	def executeGathering(self):
+	def executeStepScan(self):
+		# Init step scan
+		log.info("Initialising step scan")
+		err, msg = xpsHelp.InitXPSStepScan(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+		
+		# Check for errors
+		if err != 0:
+			# Get XPS error string
+			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+			self.emit('status', Procedure.FAILED)
+			return
+
+		# Create array of delay points
+		delayPoints = np.arange(self.startDelay, self.stopDelay, self.stepDelay)
+
+		# Get the lockin time constant
+		tc = self.lockin.time_constant
+
+		# Set wait time between measurements (tc * 2)
+		waitTime = tc * 2
+
+		# Create dictionary to store data to
+		curData = {'Delay': 0, 'X': 0, 'Y': 0}
+		
+		# Counter used to track progress
+		counter = 1
+
+		log.info("Starting step scan")
+
+		# Iterate through the delay positions
+		for delay in delayPoints:
+			# Move to delay
+			self.xps.move_stage(self.xpsStage, xpsHelp.ConvertPsToMm(delay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+
+			curData['Delay'] = delay
+
+			# Wait 2 time constants
+			sleep(waitTime)
+
+			# Take measurement from lockin
+			curData['X'] = self.lockin.x
+			curData['y'] = self.lockin.y
+
+			# Emit data
+			self.emit('results', curData)
+
+			# Update progress
+			self.emit('progress', (counter / len(delayPoints)) * 100)
+
+			counter += 1
+
+		
+
+	def executeGatheringScan(self):
 		log.info("Initialising gathering")
 		err, msg = xpsHelp.InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
 		
@@ -146,7 +200,9 @@ class TDSProcedure(Procedure):
 	
 	def execute(self):
 		if self.scanType == 'Gathering':
-			self.executeGathering()
+			self.executeGatheringScan()
+		elif self.scanType == 'Step Scan':
+			self.executeStepScan()
 
 ####################################################################
 # Main Window
