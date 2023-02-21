@@ -52,9 +52,11 @@ class TDSProcedure(Procedure):
 	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Goto Cursor'])
 
 	# Scan Inputs
-	startDelay = FloatParameter('Start Step', units='ps', default=0)
-	stepDelay = FloatParameter('Step Size', units='ps', default=0.01)
-	stopDelay = FloatParameter('End Step', units='ps', default=10)
+	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0)
+	stepDelay = FloatParameter('Step Size', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0.01)
+	stopDelay = FloatParameter('End Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=10)
+
+	gotoDelay = FloatParameter('Goto Delay', group_by='scanType', group_condition='Goto Delay', units='ps', default=0)
 
 	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition='Gathering', units='THz', default=15)
 
@@ -107,10 +109,25 @@ class TDSProcedure(Procedure):
 			log.error(str(e))
 			log.error(str(e.args))
 
+	def executeGotoDelay(self):
+		# Goto Delay
+		log.info("Moving to delay")
+		err, msg = xpsHelp.GotoDelay(self.xps, self.xpsStage, self.gotoDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+
+		# Check for errors
+		if err != 0:
+			# Get XPS error string
+			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+			self.emit('status', Procedure.FAILED)
+			return
+
+		# Update progress
+		self.emit('progress', 100)
+
 	def executeStepScan(self):
 		# Init step scan
 		log.info("Initialising step scan")
-		err, msg = xpsHelp.InitXPSStepScan(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+		err, msg = xpsHelp.GotoDelay(self.xps, self.xpsStage, self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
 		
 		# Check for errors
 		if err != 0:
@@ -203,6 +220,8 @@ class TDSProcedure(Procedure):
 			self.executeGatheringScan()
 		elif self.scanType == 'Step Scan':
 			self.executeStepScan()
+		elif self.scanType == 'Goto Delay':
+			self.executeGotoDelay()
 
 ####################################################################
 # Main Window
@@ -211,8 +230,8 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen'],
-			displays=['scanType','startDelay','stepDelay','stopDelay','thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,

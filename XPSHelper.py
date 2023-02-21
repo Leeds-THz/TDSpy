@@ -45,6 +45,22 @@ def InitXPS(ip, user = "Administrator", password = "Administrator"):
 
 	return xps
 
+def GotoDelay(xps, stage, delay, zeroOffset, passes, reverse):
+	# Get max velocity settings
+	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
+
+	# Set velocity to max
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Move stage to start pos
+	xps.move_stage(stage, ConvertPsToMm(delay, zeroOffset, passes, reverse))
+
+	return err, msg
+
 ####################################################################
 # GATHERING FUNCTIONS
 ####################################################################
@@ -183,22 +199,3 @@ def GetXPSErrorString(xps, errorCode):
 	else:
 		return "No XPS Error"
 
-####################################################################
-# STEP SCAN FUNCTIONS
-####################################################################
-
-def InitXPSStepScan(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse):
-	# Get max velocity settings
-	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
-
-	# Set velocity to max
-	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
-
-	# Check for errors
-	if err != 0:
-		return err, msg
-
-	# Move stage to start pos
-	xps.move_stage(stage, ConvertPsToMm(startDelay, zeroOffset, passes, reverse))
-
-	return err, msg
