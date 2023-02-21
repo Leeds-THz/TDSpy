@@ -1,5 +1,5 @@
 # Features to Add
-- 'Go to Delay/Cursor'
+- 'Go to Cursor'
 - Loading settings
 - Double scan
     - Keightly Voltage

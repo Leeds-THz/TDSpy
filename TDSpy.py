@@ -49,7 +49,7 @@ def ChooseSaveFile():
 ####################################################################
 class TDSProcedure(Procedure):
 	# Scan Type
-	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Goto Cursor'])
+	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Goto Cursor', 'Read Lockin'])
 
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0)
@@ -109,6 +109,39 @@ class TDSProcedure(Procedure):
 			log.error(str(e))
 			log.error(str(e.args))
 
+	def executeReadLockin(self):
+		# Get the lockin time constant
+		tc = self.lockin.time_constant
+
+		# Set wait time between measurements (tc * 2)
+		waitTime = tc * 2
+
+		# Create dictionary to store data to
+		curData = {'Delay': 0, 'X': 0, 'Y': 0}
+
+		# Counter used to track progress
+		counter = 0
+
+		# Read lockin until stop command is given
+		while(True):
+			if self.should_stop():
+				break
+
+			curData['Delay'] = counter * waitTime
+
+			# Take measurement from lockin
+			curData['X'] = self.lockin.x
+			curData['y'] = self.lockin.y
+
+			# Wait 2 time constants
+			sleep(waitTime)
+
+			# Emit data
+			self.emit('results', curData)
+
+			counter += 1
+
+
 	def executeGotoDelay(self):
 		# Goto Delay
 		log.info("Moving to delay")
@@ -123,6 +156,7 @@ class TDSProcedure(Procedure):
 
 		# Update progress
 		self.emit('progress', 100)
+
 
 	def executeStepScan(self):
 		# Init step scan
@@ -155,6 +189,9 @@ class TDSProcedure(Procedure):
 
 		# Iterate through the delay positions
 		for delay in delayPoints:
+			if self.should_stop():
+				break
+
 			# Move to delay
 			self.xps.move_stage(self.xpsStage, xpsHelp.ConvertPsToMm(delay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
 
@@ -175,7 +212,6 @@ class TDSProcedure(Procedure):
 
 			counter += 1
 
-		
 
 	def executeGatheringScan(self):
 		log.info("Initialising gathering")
@@ -190,6 +226,9 @@ class TDSProcedure(Procedure):
 
 		self.emit('progress', 5)
 
+		if self.should_stop():
+			return
+
 		log.info("Running gathering")
 		err, msg = xpsHelp.RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
 		
@@ -202,13 +241,22 @@ class TDSProcedure(Procedure):
 
 		self.emit('progress', 90)
 
+		if self.should_stop():
+			return
+
 		log.info("Downloading gathering file")
 		xpsHelp.GetGatheringFile(self.xps)
 
 		self.emit('progress', 95)
 
+		if self.should_stop():
+			return
+
 		log.info("Reading gathering file")
 		data = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
+
+		if self.should_stop():
+			return
 
 		# Emit data one index at a time
 		for i in range(len(data["Delay"])):
@@ -222,6 +270,8 @@ class TDSProcedure(Procedure):
 			self.executeStepScan()
 		elif self.scanType == 'Goto Delay':
 			self.executeGotoDelay()
+		elif self.scanType == 'Read Lockin':
+			self.executeReadLockin()
 
 ####################################################################
 # Main Window
