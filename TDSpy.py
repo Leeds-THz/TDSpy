@@ -131,8 +131,8 @@ class TDSProcedure(Procedure):
 			curData['Delay'] = counter * waitTime
 
 			# Take measurement from lockin
-			curData['X'] = self.lockin.x
-			curData['y'] = self.lockin.y
+			curData['X'] = self.lockin.x * 1000 # Convert to mV
+			curData['Y'] = self.lockin.y * 1000 # Convert to mV
 
 			# Wait 2 time constants
 			sleep(waitTime)
@@ -202,8 +202,8 @@ class TDSProcedure(Procedure):
 			sleep(waitTime)
 
 			# Take measurement from lockin
-			curData['X'] = self.lockin.x
-			curData['y'] = self.lockin.y
+			curData['X'] = self.lockin.x * 1000 # Convert to mV
+			curData['Y'] = self.lockin.y * 1000 # Convert to mV
 
 			# Emit data
 			self.emit('results', curData)
