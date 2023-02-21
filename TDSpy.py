@@ -61,53 +61,54 @@ class TDSProcedure(Procedure):
 	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition='Gathering', units='THz', default=15)
 
 	# XPS Inputs
-	xpsIP = Parameter('XPS IP', default="192.168.0.254")
-	xpsStage = Parameter("XPS Stage", default="element.delay")
-	xpsPasses = IntegerParameter("XPS Passes", default = 2)
-	xpsZeroOffset = FloatParameter("XPS Zero Offset", units="ps", default=0.0)
-	xpsReverse = BooleanParameter("XPS Reverse", default=False)
+	xpsIP = Parameter('XPS IP', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default="192.168.0.254")
+	xpsStage = Parameter("XPS Stage", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default="element.delay")
+	xpsPasses = IntegerParameter("XPS Passes", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default = 2)
+	xpsZeroOffset = FloatParameter("XPS Zero Offset", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', units="ps", default=0.0)
+	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
 
 	# Lockin Inputs
-	lockinGPIB = IntegerParameter('Lockin GPIB', default=20)
-	lockinControl = BooleanParameter('Control Lockin', default=False)
+	lockinGPIB = IntegerParameter('Lockin GPIB', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=20)
+	lockinControl = BooleanParameter('Control Lockin', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
 	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
 	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
-	
 	
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
 
 	def startup(self):
 		log.info("Startup")
 
-		# Try and connect to Lock-In
-		try:
-			# Connect to the given GPIB port
-			self.lockin = DSP7265("GPIB::{}".format(self.lockinGPIB))
-			sleep(0.1)
-
-			if self.lockinControl:
-				# Set time constant
-				log.info("Setting the Time Constant to %s A" % self.lockinWait)
-				self.lockin.time_constant=self.lockinWait
+		if self.scanType != 'Goto Delay':
+			# Try and connect to Lock-In
+			try:
+				# Connect to the given GPIB port
+				self.lockin = DSP7265("GPIB::{}".format(self.lockinGPIB))
 				sleep(0.1)
 
-				# Set sensitivity
-				log.info("Setting the sensitivity to %s A" % self.lockinSen)
-				self.lockin.sensitivity=(self.lockinSen / 1000)
-				sleep(0.1)
+				if self.lockinControl:
+					# Set time constant
+					log.info("Setting the Time Constant to %s A" % self.lockinWait)
+					self.lockin.time_constant=self.lockinWait
+					sleep(0.1)
 
-		except Exception as e:
-			log.error("Lockin initialisation failed")
-			log.error(str(e))
-			log.error(str(e.args))
+					# Set sensitivity
+					log.info("Setting the sensitivity to %s A" % self.lockinSen)
+					self.lockin.sensitivity=(self.lockinSen / 1000)
+					sleep(0.1)
 
-		# Try and connect to XPS
-		try:
-			self.xps = xpsHelp.InitXPS(self.xpsIP)
-		except Exception as e:
-			log.error("XPS initialisation failed")
-			log.error(str(e))
-			log.error(str(e.args))
+			except Exception as e:
+				log.error("Lockin initialisation failed")
+				log.error(str(e))
+				log.error(str(e.args))
+
+		if self.scanType != 'Read Lockin':
+			# Try and connect to XPS
+			try:
+				self.xps = xpsHelp.InitXPS(self.xpsIP)
+			except Exception as e:
+				log.error("XPS initialisation failed")
+				log.error(str(e))
+				log.error(str(e.args))
 
 	def executeReadLockin(self):
 		# Get the lockin time constant
