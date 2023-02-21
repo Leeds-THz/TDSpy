@@ -39,8 +39,15 @@ def GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes):
 ####################################################################
 
 def InitXPS(ip, user = "Administrator", password = "Administrator"):
-	os.system("ssh-keyscan {} > {}\\.ssh\\known_hosts.".format(ip, os.path.expanduser('~')))
+	# 'known_hosts' filepath
+	kfFilepath = "{}\\.ssh\\known_hosts.".format(os.path.expanduser('~'))
 
+	# Check if the 'known_hosts' file exists
+	if not os.path.exists(kfFilepath):
+		# Gets the ssh keys from the xps and store to 'known_hosts'
+		os.system("ssh-keyscan {} > {}".format(ip, kfFilepath))
+
+	# Connects to the XPS and creates an object
 	xps = NewportXPS(ip, username=user, password=password)
 
 	return xps
