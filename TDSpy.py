@@ -6,7 +6,7 @@
 # newportxps
 # matplotlib
 # PyQt5
-# tkinter
+# pywin32
 
 ####################################################################
 # IMPORTS
@@ -19,7 +19,6 @@ log.addHandler(logging.NullHandler())
 
 import sys
 import tempfile
-# import random
 from time import sleep
 from pymeasure.log import console_log
 from pymeasure.display.Qt import QtWidgets
@@ -29,9 +28,12 @@ from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParame
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
 from newportxps import NewportXPS
-import tkinter as tk
-from tkinter import filedialog
+# import tkinter as tk
+# from tkinter import filedialog
 import numpy as np
+import shutil
+import os
+import win32ui
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -39,10 +41,9 @@ import numpy as np
 
 def ChooseSaveFile():
 	# Choose file to save
-	root = tk.Tk()
-	root.withdraw() # Removes underlying tkinter window
-
-	return filedialog.asksaveasfilename(title = "Select save path",filetypes = (("Data file","*.dat"),("all files","*.*")))
+	dlg = win32ui.CreateFileDialog( 1, ".dat", "", 0, "Data Files (*.data)|*.dat|All Files (*.*)|*.*|")
+	dlg.DoModal()
+	return dlg.GetPathName()
 
 ####################################################################
 # THz Procedures
@@ -73,10 +74,18 @@ class TDSProcedure(Procedure):
 	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
 	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
 	
+	# filename = Parameter("Save File Path", default="temp.dat")
+
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
+
+	# data = {'Delay': [], 'X':[], 'Y':[]}
+
+	saveOnShutdown = False
 
 	def startup(self):
 		log.info("Startup")
+
+		
 
 		if self.scanType != 'Goto Delay':
 			# Try and connect to Lock-In
@@ -266,13 +275,29 @@ class TDSProcedure(Procedure):
 	
 	def execute(self):
 		if self.scanType == 'Gathering':
+			self.saveOnShutdown = True
 			self.executeGatheringScan()
+
 		elif self.scanType == 'Step Scan':
+			self.saveOnShutdown = True
 			self.executeStepScan()
+
 		elif self.scanType == 'Goto Delay':
 			self.executeGotoDelay()
+
 		elif self.scanType == 'Read Lockin':
+			self.saveOnShutdown = True
 			self.executeReadLockin()
+	
+	def setTempFile(self, tempFilePath):
+		self.curTempFile = tempFilePath
+
+	def shutdown(self):
+		if self.saveOnShutdown:
+			savepath = ChooseSaveFile()
+
+			# Copy the current temp file to the savepath
+			shutil.copy(self.curTempFile, savepath)
 
 ####################################################################
 # Main Window
@@ -291,17 +316,35 @@ class TDSWindow(ManagedWindow):
 			)
 		self.setWindowTitle('THz Scan')
 
+		# Get path to temp folder
+		self.tempDir = os.path.join(tempfile.gettempdir(), "tdspytemp")
+
+		# Check if temp folder exists
+		if os.path.exists(self.tempDir):
+			# Remove it (this is to get rid of any old temp files)
+			shutil.rmtree(self.tempDir)
+
+		# Create temp folder
+		os.mkdir(self.tempDir)
+
 	def queue(self, procedure=None):
-		filename = ChooseSaveFile()
+		# Create temp file to save data to
+		curTempFile = tempfile.mktemp(dir=self.tempDir)
 
 		if procedure is None:
 			procedure = self.make_procedure()
+		
+		# Pass the name of the current temporary file to the procedure
+		procedure.setTempFile(curTempFile)
 
 		# procedure = self.make_procedure()
-		results = Results(procedure, filename)
+		results = Results(procedure, curTempFile)
 		experiment = self.new_experiment(results)
 
+		# Start the experiment
 		self.manager.queue(experiment)
+
+		
 
 ####################################################################
 # Main
