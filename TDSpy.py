@@ -295,9 +295,14 @@ class TDSProcedure(Procedure):
 	def shutdown(self):
 		if self.saveOnShutdown:
 			savepath = ChooseSaveFile()
-
-			# Copy the current temp file to the savepath
-			shutil.copy(self.curTempFile, savepath)
+			
+			# Check that a file was selected
+			if savepath != '':
+				log.info("Saving data to " + savepath)
+				# Copy the current temp file to the savepath
+				shutil.copy(self.curTempFile, savepath)
+			else:
+				log.info("Data not saved")
 
 ####################################################################
 # Main Window
