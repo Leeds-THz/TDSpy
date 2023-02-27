@@ -27,6 +27,7 @@ from pymeasure.experiment import Procedure, Results
 from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
+from pymeasure.instruments.keithley import Keithley2400
 from newportxps import NewportXPS
 # import tkinter as tk
 # from tkinter import filedialog
@@ -50,7 +51,7 @@ def ChooseSaveFile():
 ####################################################################
 class TDSProcedure(Procedure):
 	# Scan Type
-	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Goto Cursor', 'Read Lockin'])
+	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Read Lockin'])
 
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0)
@@ -74,6 +75,12 @@ class TDSProcedure(Procedure):
 	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
 	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
 	
+
+	# Keithley Voltage
+	keithleyControl = BooleanParameter('Control Keithley Voltage', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
+	keithleyGPIB = IntegerParameter('Keithley GPIB', group_by='keithleyControl', group_condition=True, default=15)
+	keithleyVoltage = FloatParameter('Keithley Voltage', group_by='keithleyControl', group_condition=True, default=0)
+
 	# filename = Parameter("Save File Path", default="temp.dat")
 
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
@@ -91,6 +98,7 @@ class TDSProcedure(Procedure):
 			# Try and connect to Lock-In
 			try:
 				# Connect to the given GPIB port
+				log.info("Connecting to Lockin")
 				self.lockin = DSP7265("GPIB::{}".format(self.lockinGPIB))
 				sleep(0.1)
 
@@ -109,6 +117,23 @@ class TDSProcedure(Procedure):
 				log.error("Lockin initialisation failed")
 				log.error(str(e))
 				log.error(str(e.args))
+
+			# Try and connect to Keithley Voltage
+			if self.keithleyControl:
+				try:
+					# Connect to the given GPIB port
+					log.info("Connecting to Keithley")
+					self.keithley = Keithley2400("GPIB::{}".format(self.keithleyGPIB))
+					sleep(0.1)
+
+					# Set the voltage
+					log.info("Setting the voltage to %s V" % self.keithleyVoltage)
+					self.keithley.source_voltage = self.keithleyVoltage
+				
+				except Exception as e:
+					log.error("Keithley initialisation failed")
+					log.error(str(e))
+					log.error(str(e.args))
 
 		if self.scanType != 'Read Lockin':
 			# Try and connect to XPS
@@ -311,12 +336,12 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stopDelay'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'keithleyControl', 'keithleyVoltage'],
 			hide_groups = True
 			)
 		self.setWindowTitle('THz Scan')
