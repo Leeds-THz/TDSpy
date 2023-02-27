@@ -81,7 +81,13 @@ class TDSProcedure(Procedure):
 	keithleyGPIB = IntegerParameter('Keithley GPIB', group_by='keithleyControl', group_condition=True, default=15)
 	keithleyVoltage = FloatParameter('Keithley Voltage', group_by='keithleyControl', group_condition=True, default=0)
 
+
+	# Auto file naming
+	autoFileNameControl = BooleanParameter('Auto Name File', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
+	autoFileBaseName = Parameter('Auto Filename Base', group_by='autoFileNameControl', group_condition=True, default="")
+
 	# filename = Parameter("Save File Path", default="temp.dat")
+
 
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
 
@@ -91,8 +97,6 @@ class TDSProcedure(Procedure):
 
 	def startup(self):
 		log.info("Startup")
-
-		
 
 		if self.scanType != 'Goto Delay':
 			# Try and connect to Lock-In
@@ -317,9 +321,24 @@ class TDSProcedure(Procedure):
 	def setTempFile(self, tempFilePath):
 		self.curTempFile = tempFilePath
 
+	def setDefaultDir(self, path):
+		self.defaultDir = path
+
 	def shutdown(self):
 		if self.saveOnShutdown:
-			savepath = ChooseSaveFile()
+			if self.autoFileNameControl:
+				fileCount = 0
+
+				autoFilePath = os.path.join(self.defaultDir, self.autoFileBaseName)
+
+				# Check if file exists
+				# If it does, append number to end and increment
+				while os.path.exists(autoFilePath + "_{}".format(fileCount) + ".dat"):
+					fileCount += 1
+
+				savepath = autoFilePath + "_{}".format(fileCount) + ".dat"
+			else:
+				savepath = ChooseSaveFile()
 			
 			# Check that a file was selected
 			if savepath != '':
@@ -336,15 +355,17 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
             sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'keithleyControl', 'keithleyVoltage'],
-			hide_groups = True
+			hide_groups = True,
+			directory_input=True
 			)
 		self.setWindowTitle('THz Scan')
+		# self.directory = r'C:/'
 
 		# Get path to temp folder
 		self.tempDir = os.path.join(tempfile.gettempdir(), "tdspytemp")
@@ -366,6 +387,9 @@ class TDSWindow(ManagedWindow):
 		
 		# Pass the name of the current temporary file to the procedure
 		procedure.setTempFile(curTempFile)
+
+		# Pass the default directory to the procedure
+		procedure.setDefaultDir(self.directory)
 
 		# procedure = self.make_procedure()
 		results = Results(procedure, curTempFile)

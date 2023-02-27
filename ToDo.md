@@ -1,4 +1,5 @@
 # Features to Add
+- Extra metadata
 - Display only N points for 'Read Lockin' 
 - Display FFT
 - 'Go to Cursor'
