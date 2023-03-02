@@ -46,6 +46,15 @@ def ChooseSaveFile():
 	dlg.DoModal()
 	return dlg.GetPathName()
 
+# def GetFFTAbs(x, y):
+# 	N = len(x)
+
+# 	fftFull = fft(y)
+# 	freq = fftfreq(N, x[1]-x[0])[:N//2]
+# 	fftAbs = 2.0/N * np.abs(fftFull[0:N//2])
+
+# 	return freq, fftAbs
+
 ####################################################################
 # THz Procedures
 ####################################################################
@@ -68,6 +77,17 @@ class TDSProcedure(Procedure):
 	xpsPasses = IntegerParameter("XPS Passes", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default = 2)
 	xpsZeroOffset = FloatParameter("XPS Zero Offset", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', units="ps", default=0.0)
 	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
+
+	# XPS 2 Inputs
+
+	xps2Control = BooleanParameter('Control XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
+
+	xps2Stage = Parameter("XPS 2 Stage", group_by='xps2Control', group_condition=True, default="pump.delay")
+	xps2Passes = IntegerParameter("XPS 2 Passes", group_by='xps2Control', group_condition=True, default = 2)
+	xps2ZeroOffset = FloatParameter("XPS 2 Zero Offset", group_by='xps2Control', group_condition=True, units="ps", default=0.0)
+	xps2Reverse = BooleanParameter("XPS 2 Reverse", group_by='xps2Control', group_condition=True, default=False)
+	
+	xps2Delay = FloatParameter('XPS 2 Delay', group_by='xps2Control', group_condition=True, units='ps', default=0)
 
 	# Lockin Inputs
 	lockinGPIB = IntegerParameter('Lockin GPIB', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=20)
@@ -142,11 +162,24 @@ class TDSProcedure(Procedure):
 		if self.scanType != 'Read Lockin':
 			# Try and connect to XPS
 			try:
+				log.info("Connecting to XPS")
 				self.xps = xpsHelp.InitXPS(self.xpsIP)
 			except Exception as e:
 				log.error("XPS initialisation failed")
 				log.error(str(e))
 				log.error(str(e.args))
+
+			# Move XPS 2 to the given delay
+			if self.xps2Control:
+				log.info("Moving XPS 2")
+				err, msg = xpsHelp.GotoDelay(self.xps, self.xps2Stage, self.xps2Delay, self.xps2ZeroOffset, self.xps2Passes, self.xps2Reverse)
+
+				# Check for errors
+				if err != 0:
+					# Get XPS error string
+					log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+					self.emit('status', Procedure.FAILED)
+					return
 
 	def executeReadLockin(self):
 		# Get the lockin time constant
@@ -351,18 +384,22 @@ class TDSProcedure(Procedure):
 ####################################################################
 # Main Window
 ####################################################################
+# ['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
+
+
 class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse','lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
             sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'keithleyControl', 'keithleyVoltage'],
 			hide_groups = True,
-			directory_input=True
+			directory_input=True,
+			inputs_in_scrollarea = True
 			)
 		self.setWindowTitle('THz Scan')
 		# self.directory = r'C:/'
