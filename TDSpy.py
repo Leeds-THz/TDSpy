@@ -111,7 +111,7 @@ class TDSProcedure(Procedure):
 
 	DATA_COLUMNS = ['Delay', 'X', 'Y']
 
-	# data = {'Delay': [], 'X':[], 'Y':[]}
+	data = {'Delay': [], 'X':[], 'Y':[]}
 
 	saveOnShutdown = False
 
@@ -188,9 +188,6 @@ class TDSProcedure(Procedure):
 		# Set wait time between measurements (tc * 2)
 		waitTime = tc * 2
 
-		# Create dictionary to store data to
-		curData = {'Delay': 0, 'X': 0, 'Y': 0}
-
 		# Counter used to track progress
 		counter = 0
 
@@ -199,14 +196,16 @@ class TDSProcedure(Procedure):
 			if self.should_stop():
 				break
 
-			curData['Delay'] = counter * waitTime
+			self.data['Delay'].append(counter * waitTime)
 
 			# Take measurement from lockin
-			curData['X'] = self.lockin.x * 1000 # Convert to mV
-			curData['Y'] = self.lockin.y * 1000 # Convert to mV
+			self.data['X'].append(self.lockin.x * 1000) # Convert to mV
+			self.data['Y'].append(self.lockin.y * 1000) # Convert to mV
 
 			# Wait 2 time constants
 			sleep(waitTime)
+
+			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
 
 			# Emit data
 			self.emit('results', curData)
@@ -250,12 +249,9 @@ class TDSProcedure(Procedure):
 
 		# Set wait time between measurements (tc * 2)
 		waitTime = tc * 2
-
-		# Create dictionary to store data to
-		curData = {'Delay': 0, 'X': 0, 'Y': 0}
 		
 		# Counter used to track progress
-		counter = 1
+		counter = 0
 
 		log.info("Starting step scan")
 
@@ -267,20 +263,22 @@ class TDSProcedure(Procedure):
 			# Move to delay
 			self.xps.move_stage(self.xpsStage, xpsHelp.ConvertPsToMm(delay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
 
-			curData['Delay'] = delay
+			self.data['Delay'].append(delay)
 
 			# Wait 2 time constants
 			sleep(waitTime)
 
 			# Take measurement from lockin
-			curData['X'] = self.lockin.x * 1000 # Convert to mV
-			curData['Y'] = self.lockin.y * 1000 # Convert to mV
+			self.data['X'].append(self.lockin.x * 1000) # Convert to mV
+			self.data['Y'].append(self.lockin.y * 1000) # Convert to mV
+
+			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
 
 			# Emit data
 			self.emit('results', curData)
 
 			# Update progress
-			self.emit('progress', (counter / len(delayPoints)) * 100)
+			self.emit('progress', ((counter + 1) / len(delayPoints)) * 100)
 
 			counter += 1
 
@@ -325,14 +323,14 @@ class TDSProcedure(Procedure):
 			return
 
 		log.info("Reading gathering file")
-		data = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
+		self.data = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
 
 		if self.should_stop():
 			return
 
 		# Emit data one index at a time
-		for i in range(len(data["Delay"])):
-			curData = {'Delay': data["Delay"][i], 'X': data["X"][i], 'Y': data["Y"][i]}
+		for i in range(len(self.data["Delay"])):
+			curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i]}
 			self.emit('results', curData)
 	
 	def execute(self):
@@ -384,8 +382,6 @@ class TDSProcedure(Procedure):
 ####################################################################
 # Main Window
 ####################################################################
-# ['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'lockinGPIB','lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
-
 
 class TDSWindow(ManagedWindow):
 	def __init__(self):
