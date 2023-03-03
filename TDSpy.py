@@ -7,6 +7,7 @@
 # matplotlib
 # PyQt5
 # pywin32
+# scipy
 
 ####################################################################
 # IMPORTS
@@ -23,18 +24,18 @@ from time import sleep
 from pymeasure.log import console_log
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
+# from pymeasure.display.windows.managed_dock_window import ManagedDockWindow
 from pymeasure.experiment import Procedure, Results
 from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
 from pymeasure.instruments.keithley import Keithley2400
 from newportxps import NewportXPS
-# import tkinter as tk
-# from tkinter import filedialog
 import numpy as np
 import shutil
 import os
 import win32ui
+from scipy.fft import fft, fftfreq
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -46,14 +47,14 @@ def ChooseSaveFile():
 	dlg.DoModal()
 	return dlg.GetPathName()
 
-# def GetFFTAbs(x, y):
-# 	N = len(x)
+def GetFFTAbs(x, y):
+	N = len(x)
 
-# 	fftFull = fft(y)
-# 	freq = fftfreq(N, x[1]-x[0])[:N//2]
-# 	fftAbs = 2.0/N * np.abs(fftFull[0:N//2])
+	fftFull = fft(y)
+	freq = fftfreq(N, x[1]-x[0])[:N//2]
+	fftAbs = 2.0/N * np.abs(fftFull[0:N//2])
 
-# 	return freq, fftAbs
+	return freq, fftAbs
 
 ####################################################################
 # THz Procedures
@@ -109,9 +110,9 @@ class TDSProcedure(Procedure):
 	# filename = Parameter("Save File Path", default="temp.dat")
 
 
-	DATA_COLUMNS = ['Delay', 'X', 'Y']
+	DATA_COLUMNS = ['Delay', 'X', 'Y', 'Freq', 'FFT']
 
-	data = {'Delay': [], 'X':[], 'Y':[]}
+	data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
 
 	saveOnShutdown = False
 
@@ -337,10 +338,12 @@ class TDSProcedure(Procedure):
 		if self.scanType == 'Gathering':
 			self.saveOnShutdown = True
 			self.executeGatheringScan()
+			self.EmitFFT()
 
 		elif self.scanType == 'Step Scan':
 			self.saveOnShutdown = True
 			self.executeStepScan()
+			self.EmitFFT()
 
 		elif self.scanType == 'Goto Delay':
 			self.executeGotoDelay()
@@ -354,6 +357,16 @@ class TDSProcedure(Procedure):
 
 	def setDefaultDir(self, path):
 		self.defaultDir = path
+
+	def EmitFFT(self):
+		freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
+
+		self.data['Freq'] = freq
+		self.data['FFT'] = fftX
+
+		for i in range(len(freq)):
+			curData = {'Freq': freq[i], 'FFT': fftX[i]}
+			self.emit('results', curData)
 
 	def shutdown(self):
 		if self.saveOnShutdown:
@@ -383,6 +396,7 @@ class TDSProcedure(Procedure):
 # Main Window
 ####################################################################
 
+# class TDSWindow(ManagedDockWindow):
 class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(

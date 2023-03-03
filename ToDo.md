@@ -1,4 +1,5 @@
 # Features to Add
+- File output options
 - Extra metadata
 - Display only N points for 'Read Lockin' 
 - Display FFT
