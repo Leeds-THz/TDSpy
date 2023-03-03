@@ -1,5 +1,6 @@
 # Features to Add
-- File output options
+- Josh file settings
+- Improve 'Double Scan' auto file naming
 - Extra metadata
 - Display only N points for 'Read Lockin' 
 - Display FFT

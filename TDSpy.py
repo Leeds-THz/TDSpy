@@ -36,6 +36,7 @@ import shutil
 import os
 import win32ui
 from scipy.fft import fft, fftfreq
+import csv
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -43,7 +44,7 @@ from scipy.fft import fft, fftfreq
 
 def ChooseSaveFile():
 	# Choose file to save
-	dlg = win32ui.CreateFileDialog( 1, ".dat", "", 0, "Data Files (*.data)|*.dat|All Files (*.*)|*.*|")
+	dlg = win32ui.CreateFileDialog( 1, ".dat", "", 0, "Data Files (*.dat)|*.dat|All Files (*.*)|*.*|")
 	dlg.DoModal()
 	return dlg.GetPathName()
 
@@ -51,8 +52,8 @@ def GetFFTAbs(x, y):
 	N = len(x)
 
 	fftFull = fft(y)
-	freq = fftfreq(N, x[1]-x[0])[:N//2]
-	fftAbs = 2.0/N * np.abs(fftFull[0:N//2])
+	freq = fftfreq(N, x[1]-x[0])
+	fftAbs = 2.0/N * np.abs(fftFull)
 
 	return freq, fftAbs
 
@@ -109,6 +110,7 @@ class TDSProcedure(Procedure):
 
 	# filename = Parameter("Save File Path", default="temp.dat")
 
+	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'Freq', 'FFT']
 
@@ -338,12 +340,12 @@ class TDSProcedure(Procedure):
 		if self.scanType == 'Gathering':
 			self.saveOnShutdown = True
 			self.executeGatheringScan()
-			self.EmitFFT()
+			self.emitFFT()
 
 		elif self.scanType == 'Step Scan':
 			self.saveOnShutdown = True
 			self.executeStepScan()
-			self.EmitFFT()
+			self.emitFFT()
 
 		elif self.scanType == 'Goto Delay':
 			self.executeGotoDelay()
@@ -358,7 +360,7 @@ class TDSProcedure(Procedure):
 	def setDefaultDir(self, path):
 		self.defaultDir = path
 
-	def EmitFFT(self):
+	def emitFFT(self):
 		freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
 
 		self.data['Freq'] = freq
@@ -368,7 +370,31 @@ class TDSProcedure(Procedure):
 			curData = {'Freq': freq[i], 'FFT': fftX[i]}
 			self.emit('results', curData)
 
-	def shutdown(self):
+	def pymeasureSave(self, savepath):
+		# Copy the current temp file to the savepath
+		shutil.copy(self.curTempFile, savepath)
+
+	def joshSave(self, savepath):
+		# Create savefile
+		with open(savepath, 'w') as datFile:
+			# fieldnames = ['Delay', 'X', 'Y', 'Freq', 'FFT']
+			# writer = csv.DictWriter(datFile, fieldnames=fieldnames, delimiter='\t')
+
+			# writer.writeheader()
+			# writer.writerow(self.data)
+
+			writer = csv.writer(datFile, delimiter='\t', lineterminator='\n')
+			
+			# Write headers
+			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT'])
+			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp'])
+
+			# Write data
+			for i in range(len(self.data['Delay'])):
+				writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i])])
+
+		
+	def trySaveFile(self):
 		if self.saveOnShutdown:
 			if self.autoFileNameControl:
 				fileCount = 0
@@ -387,10 +413,21 @@ class TDSProcedure(Procedure):
 			# Check that a file was selected
 			if savepath != '':
 				log.info("Saving data to " + savepath)
-				# Copy the current temp file to the savepath
-				shutil.copy(self.curTempFile, savepath)
+				
+				if self.outputFormat == 'pymeasure':
+					self.pymeasureSave(savepath)
+				elif self.outputFormat == 'Josh File':
+					self.joshSave(savepath)
+
 			else:
 				log.info("Data not saved")
+
+			
+
+
+	def shutdown(self):
+		self.trySaveFile()
+
 
 ####################################################################
 # Main Window
@@ -401,8 +438,8 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
