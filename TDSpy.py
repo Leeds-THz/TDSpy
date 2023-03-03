@@ -81,7 +81,6 @@ class TDSProcedure(Procedure):
 	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
 
 	# XPS 2 Inputs
-
 	xps2Control = BooleanParameter('Control XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
 
 	xps2Stage = Parameter("XPS 2 Stage", group_by='xps2Control', group_condition=True, default="pump.delay")
@@ -108,12 +107,13 @@ class TDSProcedure(Procedure):
 	autoFileNameControl = BooleanParameter('Auto Name File', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
 	autoFileBaseName = Parameter('Auto Filename Base', group_by='autoFileNameControl', group_condition=True, default="")
 
-	# filename = Parameter("Save File Path", default="temp.dat")
-
+	# Save File Format 
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
+	# Defines what data will be emitted for the main window
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'Freq', 'FFT']
 
+	# Main dictionary to store data
 	data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
 
 	saveOnShutdown = False
@@ -354,18 +354,25 @@ class TDSProcedure(Procedure):
 			self.saveOnShutdown = True
 			self.executeReadLockin()
 	
+	# Should be called by the main window program
+	# Assigns the path to the current temporary file
 	def setTempFile(self, tempFilePath):
 		self.curTempFile = tempFilePath
 
+	# Should be called by the main window program
+	# Assigns the default save path
 	def setDefaultDir(self, path):
 		self.defaultDir = path
 
 	def emitFFT(self):
+		# FFT the data stored in 'self.data'
 		freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
 
+		# Store the FFT to the data dictionary
 		self.data['Freq'] = freq
 		self.data['FFT'] = fftX
 
+		# Emit the FFT data
 		for i in range(len(freq)):
 			curData = {'Freq': freq[i], 'FFT': fftX[i]}
 			self.emit('results', curData)
@@ -377,17 +384,11 @@ class TDSProcedure(Procedure):
 	def joshSave(self, savepath):
 		# Create savefile
 		with open(savepath, 'w') as datFile:
-			# fieldnames = ['Delay', 'X', 'Y', 'Freq', 'FFT']
-			# writer = csv.DictWriter(datFile, fieldnames=fieldnames, delimiter='\t')
-
-			# writer.writeheader()
-			# writer.writerow(self.data)
-
 			writer = csv.writer(datFile, delimiter='\t', lineterminator='\n')
 			
 			# Write headers
-			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT'])
-			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp'])
+			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT']) # Headers
+			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp']) # Units
 
 			# Write data
 			for i in range(len(self.data['Delay'])):
@@ -395,10 +396,14 @@ class TDSProcedure(Procedure):
 
 		
 	def trySaveFile(self):
+		# Checks if the flag 'saveOnShutdown' is enabled
+		# This flag should be set if needed for the given scan type in 'execute()'
 		if self.saveOnShutdown:
+			# Check if the file is to be named without bringing up a dialog
 			if self.autoFileNameControl:
 				fileCount = 0
 
+				# Get the full path of the auto-named file
 				autoFilePath = os.path.join(self.defaultDir, self.autoFileBaseName)
 
 				# Check if file exists
@@ -406,23 +411,25 @@ class TDSProcedure(Procedure):
 				while os.path.exists(autoFilePath + "_{}".format(fileCount) + ".dat"):
 					fileCount += 1
 
+				# Build the complete filepath
 				savepath = autoFilePath + "_{}".format(fileCount) + ".dat"
 			else:
+				# Bring up a save dialog
 				savepath = ChooseSaveFile()
 			
 			# Check that a file was selected
 			if savepath != '':
 				log.info("Saving data to " + savepath)
 				
+				# Check what format to save the file as
 				if self.outputFormat == 'pymeasure':
 					self.pymeasureSave(savepath)
 				elif self.outputFormat == 'Josh File':
 					self.joshSave(savepath)
 
+			# No file selected
 			else:
 				log.info("Data not saved")
-
-			
 
 
 	def shutdown(self):
