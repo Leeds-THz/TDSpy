@@ -422,18 +422,34 @@ class TDSProcedure(Procedure):
 		if self.saveOnShutdown:
 			# Check if the file is to be named without bringing up a dialog
 			if self.autoFileNameControl:
-				fileCount = 0
+				fileCount = 1
+
+				autoNameBase = self.autoFileBaseName
+
+				# Add to the base auto file name if instrument control has been selected
+				# Voltage
+				if self.keithleyControl:
+					autoNameBase = "{}_{}V".format(autoNameBase, self.keithleyVoltage)
+				# Filter Wheel
+				if self.filterControl:
+					autoNameBase = "{}_FilterPos={}".format(autoNameBase, self.filterPosition)
+				# XPS 2
+				if self.xps2Control:
+					autoNameBase = "{}_delay={}ps".format(autoNameBase, self.xps2Delay)
 
 				# Get the full path of the auto-named file
-				autoFilePath = os.path.join(self.defaultDir, self.autoFileBaseName)
+				autoFilePath = os.path.join(self.defaultDir, autoNameBase)
 
-				# Check if file exists
+				curSavePath = autoFilePath + ".dat"
+
+				# Check if the file exists
 				# If it does, append number to end and increment
-				while os.path.exists(autoFilePath + "_{}".format(fileCount) + ".dat"):
+				while os.path.exists(curSavePath):
 					fileCount += 1
+					curSavePath = autoFilePath + "_{}".format(fileCount) + ".dat"
 
 				# Build the complete filepath
-				savepath = autoFilePath + "_{}".format(fileCount) + ".dat"
+				savepath = curSavePath
 			else:
 				# Bring up a save dialog
 				savepath = ChooseSaveFile()
