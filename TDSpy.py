@@ -8,6 +8,7 @@
 # PyQt5
 # pywin32
 # scipy
+# pylablib (use lightweight installation)
 
 ####################################################################
 # IMPORTS
@@ -37,6 +38,7 @@ import os
 import win32ui
 from scipy.fft import fft, fftfreq
 import csv
+from pylablib.devices import Thorlabs
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -102,6 +104,11 @@ class TDSProcedure(Procedure):
 	keithleyGPIB = IntegerParameter('Keithley GPIB', group_by='keithleyControl', group_condition=True, default=15)
 	keithleyVoltage = FloatParameter('Keithley Voltage', group_by='keithleyControl', group_condition=True, default=0)
 
+	# ThorLabs Filter Wheel
+	filterControl = BooleanParameter('Control Filter Wheel', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
+
+	filterAddress = IntegerParameter('Filter Wheel COM Port', group_by='filterControl', group_condition=True, default=1)
+	filterPosition = IntegerParameter('Filter Wheel Position', group_by='filterControl', group_condition=True, default=1)
 
 	# Auto file naming
 	autoFileNameControl = BooleanParameter('Auto Name File', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
@@ -113,12 +120,12 @@ class TDSProcedure(Procedure):
 	# Defines what data will be emitted for the main window
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'Freq', 'FFT']
 
-	# Main dictionary to store data
-	data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
-
 	saveOnShutdown = False
 
 	def startup(self):
+		# Main dictionary to store data
+		self.data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
+
 		log.info("Startup")
 
 		if self.scanType != 'Goto Delay':
@@ -162,6 +169,18 @@ class TDSProcedure(Procedure):
 					log.error(str(e))
 					log.error(str(e.args))
 
+			# Try and connect to Thorlabs Filter Wheel
+			if self.filterControl:
+				try:
+					log.info("Connecting to filter wheel")
+					with Thorlabs.FW("COM{}".format(self.filterAddress)) as wheel: # connection is closed automatically when leaving the with-block
+						wheel.set_position(self.filterPosition)
+					sleep(1.0)
+				except Exception as e:
+					log.error("Filter wheel initialisation failed")
+					log.error(str(e))
+					log.error(str(e.args))
+
 		if self.scanType != 'Read Lockin':
 			# Try and connect to XPS
 			try:
@@ -183,6 +202,8 @@ class TDSProcedure(Procedure):
 					log.error(xpsHelp.GetXPSErrorString(self.xps, err))
 					self.emit('status', Procedure.FAILED)
 					return
+				
+			
 
 	def executeReadLockin(self):
 		# Get the lockin time constant
@@ -440,17 +461,18 @@ class TDSProcedure(Procedure):
 # Main Window
 ####################################################################
 
+
 # class TDSWindow(ManagedDockWindow):
 class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'keithleyControl', 'keithleyVoltage'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition'],
 			hide_groups = True,
 			directory_input=True,
 			inputs_in_scrollarea = True
