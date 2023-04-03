@@ -39,6 +39,7 @@ import win32ui
 from scipy.fft import fft, fftfreq
 import csv
 from pylablib.devices import Thorlabs
+from datetime import datetime, timedelta
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -122,9 +123,14 @@ class TDSProcedure(Procedure):
 
 	saveOnShutdown = False
 
+	# Keeps track of when the measurement was started
+	startTime = None
+
 	def startup(self):
 		# Main dictionary to store data
 		self.data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
+
+		self.startTime = datetime.now()
 
 		log.info("Startup")
 
@@ -145,6 +151,14 @@ class TDSProcedure(Procedure):
 					# Set sensitivity
 					log.info("Setting the sensitivity to %s A" % self.lockinSen)
 					self.lockin.sensitivity=(self.lockinSen / 1000)
+					sleep(0.1)
+				else :
+					log.info("Acquiring the Time Constant")
+					self.lockinWait = self.lockin.time_constant
+					sleep(0.1)
+
+					log.info("Acquiring the Sensitivity")
+					self.lockinSen = self.lockin.sensitivity * 1000
 					sleep(0.1)
 
 			except Exception as e:
@@ -202,9 +216,9 @@ class TDSProcedure(Procedure):
 					log.error(xpsHelp.GetXPSErrorString(self.xps, err))
 					self.emit('status', Procedure.FAILED)
 					return
-				
+		
+		log.info("Estimated end time = {}".format(str(self.estimateEndTime().strftime("%H:%M:%S"))))
 			
-
 	def executeReadLockin(self):
 		# Get the lockin time constant
 		tc = self.lockin.time_constant
@@ -468,9 +482,60 @@ class TDSProcedure(Procedure):
 			else:
 				log.info("Data not saved")
 
+	def estimateEndTime(self):
+		curStartTime = datetime.now()
+
+		if self.scanType == 'Gathering':
+			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
+			duration = distance / speed
+
+
+		elif self.scanType == 'Step Scan':
+			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
+
+
+		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
+			duration = 0
+		
+		return (curStartTime + timedelta(seconds=duration))
+
+	def get_estimates(self, sequence_length=None, sequence=None):
+		curStartTime = datetime.now()
+
+		if self.scanType == 'Gathering':
+			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
+			duration = distance / speed
+			totalDuration = duration * max(sequence_length, 1)
+			estimates = [
+			("Single Scan Duration", "{} s".format(duration)),
+			("Sequence length", str(sequence_length)),
+			("Total Scan Duration", "{} s".format(totalDuration)),
+			('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
+			]
+
+		elif self.scanType == 'Step Scan':
+			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
+			totalDuration = duration * max(sequence_length, 1)
+			estimates = [
+			("Single Scan Duration", "{} s".format(duration)),
+			("Sequence length", str(sequence_length)),
+			("Total Scan Duration", "{} s".format(totalDuration)),
+			('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
+			]
+
+		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
+			estimates = [
+			("Duration", "%d s" % 0),
+			("Sequence length", str(sequence_length)),
+			]
+		
+		return estimates
 
 	def shutdown(self):
 		self.trySaveFile()
+		self.startTime = None
 
 
 ####################################################################
