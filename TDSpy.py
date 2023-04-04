@@ -119,7 +119,7 @@ class TDSProcedure(Procedure):
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
 	# Defines what data will be emitted for the main window
-	DATA_COLUMNS = ['Delay', 'X', 'Y', 'Freq', 'FFT']
+	DATA_COLUMNS = ['Delay', 'X', 'Y', 'SigMon', 'Freq', 'FFT']
 
 	saveOnShutdown = False
 
@@ -128,7 +128,7 @@ class TDSProcedure(Procedure):
 
 	def startup(self):
 		# Main dictionary to store data
-		self.data = {'Delay': [], 'X':[], 'Y':[], 'Freq':[], 'FFT':[]}
+		self.data = {'Delay': [], 'X':[], 'Y':[], 'SigMon': [], 'Freq':[], 'FFT':[]}
 
 		self.startTime = datetime.now()
 
@@ -368,7 +368,7 @@ class TDSProcedure(Procedure):
 
 		# Emit data one index at a time
 		for i in range(len(self.data["Delay"])):
-			curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i]}
+			curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i], 'SigMon': self.data["SigMon"][i]}
 			self.emit('results', curData)
 	
 	def execute(self):
@@ -422,12 +422,12 @@ class TDSProcedure(Procedure):
 			writer = csv.writer(datFile, delimiter='\t', lineterminator='\n')
 			
 			# Write headers
-			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT']) # Headers
-			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp']) # Units
+			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT', 'SigMon']) # Headers
+			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp', 'V']) # Units
 
 			# Write data
 			for i in range(len(self.data['Delay'])):
-				writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i])])
+				writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i]), str(self.data['SigMon'][i])])
 
 		
 	def trySaveFile(self):

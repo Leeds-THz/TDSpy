@@ -85,7 +85,7 @@ def GetGatheringFile(xps, localFile = None):
 	xps.ftpconn._conn.get('/Admin/Public/Gathering/Gathering.dat', localFile)
 
 
-def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4):
+def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True):
 	scanStageSpeed = GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes) # mm/s
 	scanSteps = ConvertPsToMm(stepDelay, 0, passes, False) # mm
 	scanPeriod = scanSteps / scanStageSpeed # s
@@ -122,7 +122,10 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 		return err, msg
 
 	# Set gathering config
-	err, msg = xps._xps.GatheringConfigurationSet(xps._sid, ["{}.CurrentPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2"])
+	if extraGPIO:
+		err, msg = xps._xps.GatheringConfigurationSet(xps._sid, ["{}.CurrentPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2", "GPIO4.ADC3"])
+	else :
+		err, msg = xps._xps.GatheringConfigurationSet(xps._sid, ["{}.CurrentPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2"])
 
 	# Check for errors
 	if err != 0:
@@ -165,7 +168,7 @@ def RunGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passe
 
 	return err, msg
 	
-def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, lockinSensitivity, localFile = None, headerLines = 2):
+def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, lockinSensitivity, localFile = None, headerLines = 2, extraGPIO = True):
 	if localFile == None:
 		localFile = "Gathering.dat"
 	
@@ -173,6 +176,7 @@ def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse,
 	delay = []
 	sigX = []
 	sigY = []
+	sigMon = []
 
 	# Open gathering file
 	with open(localFile, mode='r') as dataFile:
@@ -189,12 +193,18 @@ def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse,
 			sigX.append(float(row[1]) * lockinSensitivity * 0.1)
 			sigY.append(float(row[2]) * lockinSensitivity * 0.1)
 
+			if extraGPIO:
+				sigMon.append(float(row[3]))
+
 	# Interpolate data
 	delayInterp = np.arange(startDelay, stopDelay + stepDelay, stepDelay)
 	xInterp = np.interp(delayInterp, delay, sigX)
 	yInterp = np.interp(delayInterp, delay, sigY)
 
-	return {"Delay": delayInterp, "X": xInterp, "Y": yInterp}
+	if extraGPIO:
+		return {"Delay": delayInterp, "X": xInterp, "Y": yInterp, "SigMon": sigMon}
+	else:
+		return {"Delay": delayInterp, "X": xInterp, "Y": yInterp}
 
 def GetXPSErrorString(xps, errorCode):
 	# Check for errors
