@@ -113,7 +113,7 @@ class TDSProcedure(Procedure):
 
 	# Auto file naming
 	autoFileNameControl = BooleanParameter('Auto Name File', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
-	autoFileBaseName = Parameter('Auto Filename Base', group_by='autoFileNameControl', group_condition=True, default="")
+	autoFileBaseName = Parameter('Auto Filename Base', group_by='autoFileNameControl', group_condition=True, default=" ")
 
 	# Save File Format 
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
@@ -427,7 +427,24 @@ class TDSProcedure(Procedure):
 
 			# Write data
 			for i in range(len(self.data['Delay'])):
-				writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i]), str(self.data['SigMon'][i])])
+				if self.scanType == 'Gathering':
+					writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i]), str(self.data['SigMon'][i])])
+				else:
+					writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i])])
+
+		# Save pymeasure file to settings folder
+		curFolder = os.path.dirname(savepath)
+		settingsSavepath = os.path.join(curFolder, "settings")
+
+		# Check if settings folder exists
+		if not os.path.exists(settingsSavepath):
+			# Create settings folder
+			os.mkdir(settingsSavepath)
+		
+		# Create the full path to save the pymeasure file
+		settingsSavepath = os.path.join(settingsSavepath, os.path.basename(savepath) + ".pym")
+
+		self.pymeasureSave(settingsSavepath)
 
 		
 	def trySaveFile(self):
@@ -439,6 +456,9 @@ class TDSProcedure(Procedure):
 				fileCount = 1
 
 				autoNameBase = self.autoFileBaseName
+
+				if autoNameBase == " ":
+					autoNameBase = ""
 
 				# Add to the base auto file name if instrument control has been selected
 				# Voltage
