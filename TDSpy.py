@@ -118,6 +118,11 @@ class TDSProcedure(Procedure):
 	# Save File Format 
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
+	# Repeat 
+	# NOTE: This parameter doesn't do anything. It is used as a quick fix to allow repeats in the sequencer
+	repeat = IntegerParameter('Repeat', group_by='scanType', group_condition=' ', default=0)
+
+
 	# Defines what data will be emitted for the main window
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'SigMon', 'Freq', 'FFT']
 
@@ -368,7 +373,10 @@ class TDSProcedure(Procedure):
 
 		# Emit data one index at a time
 		for i in range(len(self.data["Delay"])):
-			curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i], 'SigMon': self.data["SigMon"][i]}
+			try:
+				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i], 'SigMon': self.data["SigMon"][i]}
+			except:
+				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i]}
 			self.emit('results', curData)
 	
 	def execute(self):
@@ -388,6 +396,13 @@ class TDSProcedure(Procedure):
 		elif self.scanType == 'Read Lockin':
 			self.saveOnShutdown = True
 			self.executeReadLockin()
+
+		# Log measurement time
+		self.endTime = datetime.now()
+
+		measurementTime = self.endTime - self.startTime
+
+		log.info("Measurement Time: {:.3f} min".format(measurementTime / timedelta(minutes=1)))
 	
 	# Should be called by the main window program
 	# Assigns the path to the current temporary file
@@ -427,10 +442,27 @@ class TDSProcedure(Procedure):
 
 			# Write data
 			for i in range(len(self.data['Delay'])):
-				if self.scanType == 'Gathering':
-					writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i]), str(self.data['SigMon'][i])])
-				else:
-					writer.writerow([str(self.data['Delay'][i]), str(self.data['X'][i]), str(self.data['Y'][i]), str(self.data['Freq'][i]), str(self.data['FFT'][i])])
+				curDelay = str(self.data['Delay'][i])
+				curX = str(self.data['X'][i])
+				curY = str(self.data['Y'][i])
+
+				try:
+					curFreq = str(self.data['Freq'][i])
+				except:
+					curFreq = "NaN"
+
+				try:
+					curFFT = str(self.data['FFT'][i])
+				except:
+					curFFT = "NaN"
+
+				try:
+					curSigMon = str(self.data['SigMon'][i])
+				except:
+					curSigMon = "NaN"
+
+				writer.writerow([curDelay, curX, curY, curFreq, curFFT, curSigMon])
+
 
 		# Save pymeasure file to settings folder
 		curFolder = os.path.dirname(savepath)
@@ -520,42 +552,43 @@ class TDSProcedure(Procedure):
 		
 		return (curStartTime + timedelta(seconds=duration))
 
-	def get_estimates(self, sequence_length=None, sequence=None):
-		curStartTime = datetime.now()
+	# def get_estimates(self, sequence_length=None, sequence=None):
+	# 	curStartTime = datetime.now()
 
-		if self.scanType == 'Gathering':
-			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
-			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
-			duration = distance / speed
-			totalDuration = duration * max(sequence_length, 1)
-			estimates = [
-			("Single Scan Duration", "{} s".format(duration)),
-			("Sequence length", str(sequence_length)),
-			("Total Scan Duration", "{} s".format(totalDuration)),
-			('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
-			]
+	# 	if self.scanType == 'Gathering':
+	# 		distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+	# 		speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
+	# 		duration = distance / speed
+	# 		totalDuration = duration * max(sequence_length, 1)
+	# 		estimates = [
+	# 		("Single Scan Duration", "{} s".format(duration)),
+	# 		("Sequence length", str(sequence_length)),
+	# 		("Total Scan Duration", "{} s".format(totalDuration)),
+	# 		('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
+	# 		]
 
-		elif self.scanType == 'Step Scan':
-			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
-			totalDuration = duration * max(sequence_length, 1)
-			estimates = [
-			("Single Scan Duration", "{} s".format(duration)),
-			("Sequence length", str(sequence_length)),
-			("Total Scan Duration", "{} s".format(totalDuration)),
-			('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
-			]
+	# 	elif self.scanType == 'Step Scan':
+	# 		duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
+	# 		totalDuration = duration * max(sequence_length, 1)
+	# 		estimates = [
+	# 		("Single Scan Duration", "{} s".format(duration)),
+	# 		("Sequence length", str(sequence_length)),
+	# 		("Total Scan Duration", "{} s".format(totalDuration)),
+	# 		('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
+	# 		]
 
-		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
-			estimates = [
-			("Duration", "%d s" % 0),
-			("Sequence length", str(sequence_length)),
-			]
+	# 	elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
+	# 		estimates = [
+	# 		("Duration", "%d s" % 0),
+	# 		("Sequence length", str(sequence_length)),
+	# 		]
 		
-		return estimates
+	# 	return estimates
 
 	def shutdown(self):
 		self.trySaveFile()
-		self.startTime = None
+		self.xps = None
+	
 
 
 ####################################################################
@@ -568,12 +601,12 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'repeat'],
 			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'repeat'],
 			hide_groups = True,
 			directory_input=True,
 			inputs_in_scrollarea = True

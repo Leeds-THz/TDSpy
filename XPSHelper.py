@@ -84,6 +84,8 @@ def GetGatheringFile(xps, localFile = None):
 
 	xps.ftpconn._conn.get('/Admin/Public/Gathering/Gathering.dat', localFile)
 
+	xps.ftpconn.close()
+
 
 def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True):
 	scanStageSpeed = GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes) # mm/s
@@ -92,6 +94,19 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 
 	expectedPoints = int(math.floor(((stopDelay - startDelay) / stepDelay) + 2))
 	xpsDivisor = int(math.floor(scanPeriod * 10000))
+
+	# Kill Any Gathering Currently Running
+	err, msg = xps._xps.GatheringStop(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+	
+	err, msg = xps._xps.GatheringReset(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
 
 	# Get max velocity settings
 	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
@@ -114,7 +129,13 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 		return err, msg
 
 
-	# Reset gathering
+	# Kill Any Gathering Currently Running
+	err, msg = xps._xps.GatheringStop(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+	
 	err, msg = xps._xps.GatheringReset(xps._sid)
 
 	# Check for errors
