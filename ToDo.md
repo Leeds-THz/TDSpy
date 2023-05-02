@@ -3,3 +3,6 @@
 - Display only N points for 'Read Lockin' 
 - 'Go to Cursor'
 - Error detection + rescanning  
+- Add auto-phase option
+- Error detection for invalid filename
+- XPS Q8 compatibility
