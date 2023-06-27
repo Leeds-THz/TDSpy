@@ -203,8 +203,12 @@ class TDSProcedure(Procedure):
 		if self.scanType != 'Read Lockin':
 			# Try and connect to XPS
 			try:
-				log.info("Connecting to XPS")
-				self.xps = xpsHelp.InitXPS(self.xpsIP)
+				if self.xps == None:
+					log.info("Connecting to XPS")
+					self.xps = xpsHelp.InitXPS(self.xpsIP)
+				else:
+					log.info("XPS already connected")
+
 			except Exception as e:
 				log.error("XPS initialisation failed")
 				log.error(str(e))
@@ -552,38 +556,11 @@ class TDSProcedure(Procedure):
 		
 		return (curStartTime + timedelta(seconds=duration))
 
-	# def get_estimates(self, sequence_length=None, sequence=None):
-	# 	curStartTime = datetime.now()
-
-	# 	if self.scanType == 'Gathering':
-	# 		distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
-	# 		speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
-	# 		duration = distance / speed
-	# 		totalDuration = duration * max(sequence_length, 1)
-	# 		estimates = [
-	# 		("Single Scan Duration", "{} s".format(duration)),
-	# 		("Sequence length", str(sequence_length)),
-	# 		("Total Scan Duration", "{} s".format(totalDuration)),
-	# 		('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
-	# 		]
-
-	# 	elif self.scanType == 'Step Scan':
-	# 		duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
-	# 		totalDuration = duration * max(sequence_length, 1)
-	# 		estimates = [
-	# 		("Single Scan Duration", "{} s".format(duration)),
-	# 		("Sequence length", str(sequence_length)),
-	# 		("Total Scan Duration", "{} s".format(totalDuration)),
-	# 		('Estimated End Time', str(curStartTime + timedelta(seconds=totalDuration)))
-	# 		]
-
-	# 	elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
-	# 		estimates = [
-	# 		("Duration", "%d s" % 0),
-	# 		("Sequence length", str(sequence_length)),
-	# 		]
-		
-	# 	return estimates
+	# Should be called by the main window program
+	# Assigns the XPS object to the program
+	# This is done to prevent crashes when running many consecutive scans
+	def setXPS(self, xps):
+		self.xps = xps
 
 	def shutdown(self):
 		self.trySaveFile()
@@ -625,7 +602,13 @@ class TDSWindow(ManagedWindow):
 		# Create temp folder
 		os.mkdir(self.tempDir)
 
+		self.xps = None
+
 	def queue(self, procedure=None):
+		# Connect to XPS if unconnected
+		if self.xps == None:
+			self.xps = xpsHelp.InitXPS(self.inputs.xpsIP.parameter.value)
+
 		# Create temp file to save data to
 		curTempFile = tempfile.mktemp(dir=self.tempDir)
 
@@ -637,6 +620,9 @@ class TDSWindow(ManagedWindow):
 
 		# Pass the default directory to the procedure
 		procedure.setDefaultDir(self.directory)
+
+		# Pass the XPS instance
+		procedure.setXPS(self.xps)
 
 		# procedure = self.make_procedure()
 		results = Results(procedure, curTempFile)
