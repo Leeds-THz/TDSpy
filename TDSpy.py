@@ -8,8 +8,6 @@
 # PyQt5
 # pywin32
 # scipy
-# numba
-# pylablib (use lightweight installation with "numba")
 
 ####################################################################
 # IMPORTS
@@ -30,8 +28,6 @@ from pymeasure.display.windows import ManagedWindow
 from pymeasure.experiment import Procedure, Results
 from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
 import matplotlib.pyplot as plt
-from pymeasure.instruments.signalrecovery import DSP7265
-from pymeasure.instruments.keithley import Keithley2400
 from newportxps import NewportXPS
 import numpy as np
 import shutil
@@ -39,7 +35,6 @@ import os
 import win32ui
 from scipy.fft import fft, fftfreq
 import csv
-from pylablib.devices import Thorlabs
 from datetime import datetime, timedelta
 from mcculw import ul
 from mcculw.enums import ULRange
