@@ -8,7 +8,8 @@
 # PyQt5
 # pywin32
 # scipy
-# pylablib (use lightweight installation)
+# numba
+# pylablib (use lightweight installation with "numba")
 
 ####################################################################
 # IMPORTS
@@ -40,6 +41,9 @@ from scipy.fft import fft, fftfreq
 import csv
 from pylablib.devices import Thorlabs
 from datetime import datetime, timedelta
+from mcculw import ul
+from mcculw.enums import ULRange
+from mcculw.ul import ULError
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -65,7 +69,7 @@ def GetFFTAbs(x, y):
 ####################################################################
 class TDSProcedure(Procedure):
 	# Scan Type
-	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Read Lockin'])
+	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Goto Delay', 'Read DAC'])
 
 	# Scan Inputs
 	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0)
@@ -77,39 +81,28 @@ class TDSProcedure(Procedure):
 	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition='Gathering', units='THz', default=15)
 
 	# XPS Inputs
-	xpsIP = Parameter('XPS IP', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default="192.168.0.254")
-	xpsStage = Parameter("XPS Stage", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default="element.delay")
-	xpsPasses = FloatParameter("XPS Passes", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default = 2.0)
-	xpsZeroOffset = FloatParameter("XPS Zero Offset", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', units="ps", default=0.0)
-	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
+	xpsIP = Parameter('XPS IP', group_by='scanType', group_condition=lambda v: v != 'Read DAC', default="192.168.0.254")
+	xpsStage = Parameter("XPS Stage", group_by='scanType', group_condition=lambda v: v != 'Read DAC', default="THz_long.PP")
+	xpsPasses = FloatParameter("XPS Passes", group_by='scanType', group_condition=lambda v: v != 'Read DAC', default = 2.0)
+	xpsZeroOffset = FloatParameter("XPS Zero Offset", group_by='scanType', group_condition=lambda v: v != 'Read DAC', units="ps", default=0.0)
+	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read DAC', default=False)
 
 	# XPS 2 Inputs
 	xps2Control = BooleanParameter('Control XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
 
-	xps2Stage = Parameter("XPS 2 Stage", group_by='xps2Control', group_condition=True, default="pump.delay")
+	xps2Stage = Parameter("XPS 2 Stage", group_by='xps2Control', group_condition=True, default=" THz_short.PP")
 	xps2Passes = FloatParameter("XPS 2 Passes", group_by='xps2Control', group_condition=True, default = 2.0)
 	xps2ZeroOffset = FloatParameter("XPS 2 Zero Offset", group_by='xps2Control', group_condition=True, units="ps", default=0.0)
 	xps2Reverse = BooleanParameter("XPS 2 Reverse", group_by='xps2Control', group_condition=True, default=False)
 	
 	xps2Delay = FloatParameter('XPS 2 Delay', group_by='xps2Control', group_condition=True, units='ps', default=0)
-
-	# Lockin Inputs
-	lockinGPIB = IntegerParameter('Lockin GPIB', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=20)
-	lockinControl = BooleanParameter('Control Lockin', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
-	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
-	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
 	
+	# MCCDAQ
+	mccdacBoard = IntegerParameter('MCCDAQ Board Number', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=0)
+	mccdacXChannel = IntegerParameter('MCCDAQ Lockin X Channel', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=0)
+	mccdacYChannel = IntegerParameter('MCCDAQ Lockin Y Channel', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=1)
 
-	# Keithley Voltage
-	keithleyControl = BooleanParameter('Control Keithley Voltage', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
-	keithleyGPIB = IntegerParameter('Keithley GPIB', group_by='keithleyControl', group_condition=True, default=15)
-	keithleyVoltage = FloatParameter('Keithley Voltage', group_by='keithleyControl', group_condition=True, default=0)
-
-	# ThorLabs Filter Wheel
-	filterControl = BooleanParameter('Control Filter Wheel', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
-
-	filterAddress = IntegerParameter('Filter Wheel COM Port', group_by='filterControl', group_condition=True, default=1)
-	filterPosition = IntegerParameter('Filter Wheel Position', group_by='filterControl', group_condition=True, default=1)
+	dacWait = FloatParameter('Lockin wait time (s)',  group_by='scanType', group_condition=lambda v: v != 'Goto Delay',  default=0.1,  units='s')
 
 	# Auto file naming
 	autoFileNameControl = BooleanParameter('Auto Name File', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
@@ -136,71 +129,10 @@ class TDSProcedure(Procedure):
 		self.data = {'Delay': [], 'X':[], 'Y':[], 'SigMon': [], 'Freq':[], 'FFT':[]}
 
 		self.startTime = datetime.now()
-
+		self.dacRange = ULRange.BIP5VOLTS
 		log.info("Startup")
 
-		if self.scanType != 'Goto Delay':
-			# Try and connect to Lock-In
-			try:
-				# Connect to the given GPIB port
-				log.info("Connecting to Lockin")
-				self.lockin = DSP7265("GPIB::{}".format(self.lockinGPIB))
-				sleep(0.1)
-
-				if self.lockinControl:
-					# Set time constant
-					log.info("Setting the Time Constant to %s A" % self.lockinWait)
-					self.lockin.time_constant=self.lockinWait
-					sleep(0.1)
-
-					# Set sensitivity
-					log.info("Setting the sensitivity to %s A" % self.lockinSen)
-					self.lockin.sensitivity=(self.lockinSen / 1000)
-					sleep(0.1)
-				else :
-					log.info("Acquiring the Time Constant")
-					self.lockinWait = self.lockin.time_constant
-					sleep(0.1)
-
-					log.info("Acquiring the Sensitivity")
-					self.lockinSen = self.lockin.sensitivity * 1000
-					sleep(0.1)
-
-			except Exception as e:
-				log.error("Lockin initialisation failed")
-				log.error(str(e))
-				log.error(str(e.args))
-
-			# Try and connect to Keithley Voltage
-			if self.keithleyControl:
-				try:
-					# Connect to the given GPIB port
-					log.info("Connecting to Keithley")
-					self.keithley = Keithley2400("GPIB::{}".format(self.keithleyGPIB))
-					sleep(0.1)
-
-					# Set the voltage
-					log.info("Setting the voltage to %s V" % self.keithleyVoltage)
-					self.keithley.source_voltage = self.keithleyVoltage
-				
-				except Exception as e:
-					log.error("Keithley initialisation failed")
-					log.error(str(e))
-					log.error(str(e.args))
-
-			# Try and connect to Thorlabs Filter Wheel
-			if self.filterControl:
-				try:
-					log.info("Connecting to filter wheel")
-					with Thorlabs.FW("COM{}".format(self.filterAddress)) as wheel: # connection is closed automatically when leaving the with-block
-						wheel.set_position(self.filterPosition)
-					sleep(1.0)
-				except Exception as e:
-					log.error("Filter wheel initialisation failed")
-					log.error(str(e))
-					log.error(str(e.args))
-
-		if self.scanType != 'Read Lockin':
+		if self.scanType != 'Read DAC':
 			# Try and connect to XPS
 			try:
 				if self.xps == None:
@@ -227,14 +159,8 @@ class TDSProcedure(Procedure):
 					return
 		
 		log.info("Estimated end time = {}".format(str(self.estimateEndTime().strftime("%H:%M:%S"))))
-			
-	def executeReadLockin(self):
-		# Get the lockin time constant
-		tc = self.lockin.time_constant
-
-		# Set wait time between measurements (tc * 2)
-		waitTime = tc * 2
-
+	
+	def executeReadDAC(self):
 		# Counter used to track progress
 		counter = 0
 
@@ -243,13 +169,17 @@ class TDSProcedure(Procedure):
 			if self.should_stop():
 				break
 
+			# Wait 2 time constants
+			waitTime = self.dacWait * 2
+
 			self.data['Delay'].append(counter * waitTime)
 
-			# Take measurement from lockin
-			self.data['X'].append(self.lockin.x * 1000) # Convert to mV
-			self.data['Y'].append(self.lockin.y * 1000) # Convert to mV
+			# Take measurement from DAC
+			# NOTE: May need to convert to enginerring units to get voltage
+			self.data['X'].append(ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS) * 1000) # Convert to mV
+			self.data['Y'].append(ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS) * 1000)
 
-			# Wait 2 time constants
+			# Wait
 			sleep(waitTime)
 
 			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
@@ -292,7 +222,7 @@ class TDSProcedure(Procedure):
 		delayPoints = np.arange(self.startDelay, self.stopDelay, self.stepDelay)
 
 		# Get the lockin time constant
-		tc = self.lockin.time_constant
+		tc = self.dacWait
 
 		# Set wait time between measurements (tc * 2)
 		waitTime = tc * 2
@@ -316,8 +246,9 @@ class TDSProcedure(Procedure):
 			sleep(waitTime)
 
 			# Take measurement from lockin
-			self.data['X'].append(self.lockin.x * 1000) # Convert to mV
-			self.data['Y'].append(self.lockin.y * 1000) # Convert to mV
+			self.data['X'].append(ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS) * 1000) # Convert to mV
+			self.data['Y'].append(ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS) * 1000)
+
 
 			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
 
@@ -400,6 +331,10 @@ class TDSProcedure(Procedure):
 		elif self.scanType == 'Read Lockin':
 			self.saveOnShutdown = True
 			self.executeReadLockin()
+
+		elif self.scanType == 'Read DAC':
+			self.saveOnShutdown = True
+			self.executeReadDAC()
 
 		# Log measurement time
 		self.endTime = datetime.now()
@@ -548,10 +483,10 @@ class TDSProcedure(Procedure):
 
 
 		elif self.scanType == 'Step Scan':
-			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
+			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.dacWait * 2.0
 
 
-		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
+		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay' or self.scanType == 'Read DAC':
 			duration = 0
 		
 		return (curStartTime + timedelta(seconds=duration))
@@ -578,12 +513,12 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'repeat'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'mccdacBoard','mccdacXChannel','mccdacYChannel','dacWait','autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'repeat'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay','mccdacBoard','mccdacXChannel','mccdacYChannel','dacWait', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'repeat'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'repeat'],
 			hide_groups = True,
 			directory_input=True,
 			inputs_in_scrollarea = True
