@@ -15,17 +15,17 @@ def ConvertPsToMm(ps, zeroOffset, passes, reverse):
 	c = 0.3 # Speed of light in mm/ps
 
 	if reverse:
-		return (-1 * c * (1 / passes) * ps) + zeroOffset
+		return (-1 * c * (1 / passes) * (ps + zeroOffset)) 
 	else:
-		return (c * (1 / passes) * ps) + zeroOffset
+		return (c * (1 / passes) * (ps + zeroOffset))
 
 def ConvertMmToPs(mm, zeroOffset, passes, reverse):
 	c = 0.3 # Speed of light in mm/ps
 
 	if reverse:
-		return ((mm - zeroOffset) * passes) / -c
+		return ((mm * passes) / -c) - zeroOffset
 	else:
-		return ((mm - zeroOffset) * passes) / c
+		return ((mm  * passes) / c) - zeroOffset
 
 def GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes):
 	# This code is taken from Josh's THz scan program
