@@ -83,7 +83,7 @@ class TDSProcedure(Procedure):
 	xpsReverse = BooleanParameter("XPS Reverse", group_by='scanType', group_condition=lambda v: v != 'Read DAC', default=False)
 
 	# XPS 2 Inputs
-	xps2Control = BooleanParameter('Control XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
+	xps2Control = BooleanParameter('Control XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read DAC', default=False)
 
 	xps2Stage = Parameter("XPS 2 Stage", group_by='xps2Control', group_condition=True, default=" THz_short.PP")
 	xps2Passes = FloatParameter("XPS 2 Passes", group_by='xps2Control', group_condition=True, default = 2.0)
@@ -171,8 +171,8 @@ class TDSProcedure(Procedure):
 
 			# Take measurement from DAC
 			# NOTE: May need to convert to enginerring units to get voltage
-			self.data['X'].append(ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS) * 1000) # Convert to mV
-			self.data['Y'].append(ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS) * 1000)
+			self.data['X'].append(ul.to_eng_units(self.mccdacBoard, ULRange.BIP5VOLTS, ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS)) * 1000) # Convert to mV
+			self.data['Y'].append(ul.to_eng_units(self.mccdacBoard, ULRange.BIP5VOLTS, ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS)) * 1000) # Convert to mV
 
 			# Wait
 			sleep(waitTime)
@@ -240,9 +240,9 @@ class TDSProcedure(Procedure):
 			# Wait 2 time constants
 			sleep(waitTime)
 
-			# Take measurement from lockin
-			self.data['X'].append(ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS) * 1000) # Convert to mV
-			self.data['Y'].append(ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS) * 1000)
+			# Take measurement from DAC
+			self.data['X'].append(ul.to_eng_units(self.mccdacBoard, ULRange.BIP5VOLTS, ul.a_in(self.mccdacBoard, self.mccdacXChannel, ULRange.BIP5VOLTS)) * 1000) # Convert to mV
+			self.data['Y'].append(ul.to_eng_units(self.mccdacBoard, ULRange.BIP5VOLTS, ul.a_in(self.mccdacBoard, self.mccdacYChannel, ULRange.BIP5VOLTS)) * 1000) # Convert to mV
 
 
 			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
@@ -255,77 +255,14 @@ class TDSProcedure(Procedure):
 
 			counter += 1
 
-
-	def executeGatheringScan(self):
-		log.info("Initialising gathering")
-		err, msg = xpsHelp.InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
-		
-		# Check for errors
-		if err != 0:
-			# Get XPS error string
-			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			self.emit('status', Procedure.FAILED)
-			return
-
-		self.emit('progress', 5)
-
-		if self.should_stop():
-			return
-
-		log.info("Running gathering")
-		err, msg = xpsHelp.RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
-		
-		# Check for errors
-		if err != 0:
-			# Get XPS error string
-			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			self.emit('status', Procedure.FAILED)
-			return
-
-		self.emit('progress', 90)
-
-		if self.should_stop():
-			return
-
-		log.info("Downloading gathering file")
-		xpsHelp.GetGatheringFile(self.xps)
-
-		self.emit('progress', 95)
-
-		if self.should_stop():
-			return
-
-		log.info("Reading gathering file")
-		self.data = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
-
-		if self.should_stop():
-			return
-
-		# Emit data one index at a time
-		for i in range(len(self.data["Delay"])):
-			try:
-				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i], 'SigMon': self.data["SigMon"][i]}
-			except:
-				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i]}
-			self.emit('results', curData)
-	
 	def execute(self):
-		if self.scanType == 'Gathering':
-			self.saveOnShutdown = True
-			self.executeGatheringScan()
-			self.emitFFT()
-
-		elif self.scanType == 'Step Scan':
+		if self.scanType == 'Step Scan':
 			self.saveOnShutdown = True
 			self.executeStepScan()
 			self.emitFFT()
 
 		elif self.scanType == 'Goto Delay':
 			self.executeGotoDelay()
-
-		elif self.scanType == 'Read Lockin':
-			self.saveOnShutdown = True
-			self.executeReadLockin()
 
 		elif self.scanType == 'Read DAC':
 			self.saveOnShutdown = True
@@ -471,17 +408,11 @@ class TDSProcedure(Procedure):
 	def estimateEndTime(self):
 		curStartTime = datetime.now()
 
-		if self.scanType == 'Gathering':
-			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
-			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
-			duration = distance / speed
-
-
-		elif self.scanType == 'Step Scan':
+		if self.scanType == 'Step Scan':
 			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.dacWait * 2.0
 
 
-		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay' or self.scanType == 'Read DAC':
+		elif self.scanType == 'Goto Delay' or self.scanType == 'Read DAC':
 			duration = 0
 		
 		return (curStartTime + timedelta(seconds=duration))
@@ -537,7 +468,10 @@ class TDSWindow(ManagedWindow):
 	def queue(self, procedure=None):
 		# Connect to XPS if unconnected
 		if self.xps == None:
-			self.xps = xpsHelp.InitXPS(self.inputs.xpsIP.parameter.value)
+			try:
+				self.xps = xpsHelp.InitXPS(self.inputs.xpsIP.parameter.value)
+			except:
+				log.warning("Could not perform initial XPS connection")
 
 		# Create temp file to save data to
 		curTempFile = tempfile.mktemp(dir=self.tempDir)
