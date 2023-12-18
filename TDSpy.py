@@ -40,7 +40,7 @@ class TDSWindow(ManagedWindow):
 		super().__init__(
 			procedure_class=tdsProc.TDSProcedure,
 			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'mccdacBoard','mccdacXChannel','mccdacYChannel','dacWait', 'lockinSen', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'repeat'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay','mccdacBoard','mccdacXChannel','mccdacYChannel','dacWait', 'lockinSen', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay','mccdacBoard','mccdacXChannel','mccdacYChannel','dacWait', 'lockinSen' ],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,

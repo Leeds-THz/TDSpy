@@ -12,7 +12,7 @@ Python code to run TDS experiments
    7. Amplifier Ref (3 kHz) -> ThorLabs Chopper Ext Input
    8. ThorLabs Chopper Ref Output (1.5 kHz) -> Sig Gen Ext Trig In
    9. ThorLabs Chopper Ref Output (1.5 kHz) -> Lockin Ref In
-   10. Sig Gen CH 1 Out (20V Peak-Peak Max) -> PCA Emitter
+   10. Sig Gen CH 1 Out (20V Peak-Peak Max, for general use, recommended 5-10V Peak-Peak) -> PCA Emitter
    11. XPS Ethernet Switch -> PC
 2.  Set up ThorLabs Chopper
     1.  Ref Out -> Target
@@ -26,6 +26,11 @@ Python code to run TDS experiments
     1.  Select 'Step Scan'
     2.  Input scan parameters (lockin time constant and sensitivity must be inputted manually)
     3.  Press 'Queue' to acquire TDS scan
+5. To load previous scan parameters:
+   1. Press 'Open'
+   2. Select previous scan file (If using 'Josh' file format, select scan in 'settings' folder)
+   3. Right click graph
+   4. Select 'Use these parameters'
 6.  For repeat measurements:
     1.  Click 'Add root item' in 'Sequencer' (bottom left of program)
     2.  Change 'Parameter' to 'Repeat'
