@@ -6,4 +6,3 @@
 - Add auto-phase option
 - Error detection for invalid filename
 - XPS Q8 compatibility
-- Fix XPS zero pos bug (mm being set, not ps) 
