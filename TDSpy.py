@@ -4,11 +4,12 @@
 
 # pymeasure
 # newportxps
-# matplotlib
 # PyQt5
 # pywin32
 # scipy
+# matplotlib
 # pylablib (use lightweight installation)
+# numba
 
 ####################################################################
 # IMPORTS
@@ -41,7 +42,21 @@ from scipy.fft import fft, fftfreq
 import csv
 from pylablib.devices import Thorlabs
 from datetime import datetime, timedelta
+import json
 
+
+####################################################################
+# GENERAL FUNCTIONS
+####################################################################
+
+def LoadSettings():
+	# opening the file in read mode 
+	my_file = open("settings.ini", "r") 
+	
+	# reading the file 
+	data = my_file.read() 
+
+	return json.loads(data)
 
 ####################################################################
 # Main Window
@@ -53,29 +68,25 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=tdsProc.TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'repeat'],
-			displays=['scanType','startDelay','stepDelay','stopDelay', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'sequenceRepeats'],
+			displays=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'xpsStage', 'xps2Control', 'xps2Stage', 'xps2Delay', 'xps2Follow', 'lockinControl', 'keithleyControl', 'keithleyVoltage', 'filterControl', 'filterPosition'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'repeat'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'sequenceRepeats'],
 			hide_groups = True,
-			directory_input=True,
+			# directory_input=True,
 			inputs_in_scrollarea = True
 			)
 		self.setWindowTitle('THz Scan')
-		# self.directory = r'C:/'
 
-		# Get path to temp folder
-		self.tempDir = os.path.join(tempfile.gettempdir(), "tdspytemp")
+		self.settings = LoadSettings()
 
-		# Check if temp folder exists
-		if os.path.exists(self.tempDir):
-			# Remove it (this is to get rid of any old temp files)
-			shutil.rmtree(self.tempDir)
-
-		# Create temp folder
-		os.mkdir(self.tempDir)
+		self.filename = self.settings["default_filename"]  # Sets default filename
+		self.directory = self.settings["default_directory"] # Sets default directory
+		self.store_measurement = True                              # Controls the 'Save data' toggle
+		self.file_input.extensions = ["dat", "csv", "txt"]         # Sets recognized extensions, first entry is the default extension
+		self.file_input.filename_fixed = False                      # Controls whether the filename-field is frozen (but still displayed)
 
 		self.xps = None
 
@@ -84,27 +95,14 @@ class TDSWindow(ManagedWindow):
 		if self.xps == None:
 			self.xps = xpsHelp.InitXPS(self.inputs.xpsIP.parameter.value)
 
-		# Create temp file to save data to
-		curTempFile = tempfile.mktemp(dir=self.tempDir)
-
 		if procedure is None:
 			procedure = self.make_procedure()
-		
-		# Pass the name of the current temporary file to the procedure
-		procedure.setTempFile(curTempFile)
-
-		# Pass the default directory to the procedure
-		procedure.setDefaultDir(self.directory)
 
 		# Pass the XPS instance
 		procedure.setXPS(self.xps)
 
-		# procedure = self.make_procedure()
-		results = Results(procedure, curTempFile)
-		experiment = self.new_experiment(results)
-
-		# Start the experiment
-		self.manager.queue(experiment)
+		# Call parent queue function to start the procedure + save data etc.
+		super().queue(procedure)
 
 		
 

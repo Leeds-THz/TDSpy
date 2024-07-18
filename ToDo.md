@@ -1,8 +1,20 @@
 # Features to Add
 - Extra metadata
+  - Lockin tc
 - Display only N points for 'Read Lockin' 
 - 'Go to Cursor'
 - Error detection + rescanning  
 - Add auto-phase option
 - Error detection for invalid filename
 - XPS Q8 compatibility
+- Other Input Details
+  - Emitter
+    - Emitter Name
+    - Emitter Optical Power
+    - Emitter Bias
+  - Detector
+    - Detector Name
+  - Sample
+    - Sample Name
+    - Sample Temperature
+  - Other Details

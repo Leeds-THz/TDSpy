@@ -28,6 +28,8 @@ from scipy.fft import fft, fftfreq
 import csv
 from pylablib.devices import Thorlabs
 from datetime import datetime, timedelta
+import random
+import math
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -110,9 +112,11 @@ class TDSProcedure(Procedure):
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
 	# Repeat 
-	# NOTE: This parameter doesn't do anything. It is used as a quick fix to allow repeats in the sequencer
-	repeat = IntegerParameter('Repeat', group_by='scanType', group_condition=' ', default=0)
+	repeats = IntegerParameter('Repeats', group_by='scanType', group_condition=lambda v:  v == 'Step Scan' or v == 'Gathering', default=1)
 
+	# Sequence Repeat 
+	# NOTE: This parameter doesn't do anything. It is used as a quick fix to allow repeats in the sequencer
+	sequenceRepeats = IntegerParameter('Sequence Repeats', group_by='scanType', group_condition=lambda v:  v == ' ', default=0)
 
 	# Defines what data will be emitted for the main window
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'SigMon', 'Freq', 'FFT']
@@ -223,7 +227,7 @@ class TDSProcedure(Procedure):
 					self.stopDelay = self.stopDelay + self.xps2Delay
 		
 		log.info("Estimated end time = {}".format(str(self.estimateEndTime().strftime("%H:%M:%S"))))
-			
+
 	def executeReadLockin(self):
 		# Get the lockin time constant
 		tc = self.lockin.time_constant
@@ -285,7 +289,7 @@ class TDSProcedure(Procedure):
 			return
 
 		# Create array of delay points
-		delayPoints = np.arange(self.startDelay, self.stopDelay, self.stepDelay)
+		delayPoints = np.arange(self.startDelay, self.stopDelay + self.stepDelay, self.stepDelay)
 
 		# Get the lockin time constant
 		tc = self.lockin.time_constant
@@ -293,91 +297,125 @@ class TDSProcedure(Procedure):
 		# Set wait time between measurements (tc * 2)
 		waitTime = tc * 2
 		
-		# Counter used to track progress
-		counter = 0
-
 		log.info("Starting step scan")
 
 		# Iterate through the delay positions
-		for delay in delayPoints:
-			if self.should_stop():
-				break
+		for repeat in range(self.repeats):
+			if repeat != 0:
+				# This breaks the plot into multiple segments when plotting
+				# Note: It does not do this 'live'. When the measurement is finished, untick and retick the graph
+				self.emit('results', {'Delay': math.nan, 'X': math.nan, 'Y': math.nan } )
+			tempData = {'Delay':[], 'X':[], 'Y':[]}
+			
+			# Counter used to track progress
+			counter = 0
 
-			# Move to delay
-			self.xps.move_stage(self.xpsStage, xpsHelp.ConvertPsToMm(delay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+			for delay in delayPoints:
+				if self.should_stop():
+					break
 
-			self.data['Delay'].append(delay)
+				# Move to delay
+				self.xps.move_stage(self.xpsStage, xpsHelp.ConvertPsToMm(delay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
 
-			# Wait 2 time constants
-			sleep(waitTime)
+				tempData['Delay'].append(delay)
 
-			# Take measurement from lockin
-			self.data['X'].append(self.lockin.x * 1000) # Convert to mV
-			self.data['Y'].append(self.lockin.y * 1000) # Convert to mV
+				# Wait 2 time constants
+				sleep(waitTime)
 
-			curData = {'Delay': self.data["Delay"][counter], 'X': self.data["X"][counter], 'Y': self.data["Y"][counter]}
+				# Take measurement from lockin
+				tempData['X'].append(self.lockin.x * 1000) # Convert to mV
+				tempData['Y'].append(self.lockin.y * 1000) # Convert to mV
 
-			# Emit data
-			self.emit('results', curData)
+				curData = {'Delay': tempData["Delay"][counter], 'X': tempData["X"][counter], 'Y': tempData["Y"][counter]}
 
-			# Update progress
-			self.emit('progress', ((counter + 1) / len(delayPoints)) * 100)
+				# Emit data
+				self.emit('results', curData)
 
-			counter += 1
+				# Update progress
+				self.emit('progress', (((len(delayPoints) * repeat) + counter + 1) / (len(delayPoints) * self.repeats)) * 100)
+
+				counter += 1
+
+			if self.repeats > 1:
+				self.data['Delay'] = tempData["Delay"]
+				self.data['X'].append(tempData["X"])
+				self.data['Y'].append(tempData["Y"])
+			else:
+				self.data = tempData
 
 
 	def executeGatheringScan(self):
-		log.info("Initialising gathering")
-		err, msg = xpsHelp.InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
-		
-		# Check for errors
-		if err != 0:
-			# Get XPS error string
-			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			self.emit('status', Procedure.FAILED)
-			return
+		counter = 1
+		for repeat in range(self.repeats):
+			if repeat != 0:
+				# This breaks the plot into multiple segments when plotting
+				# Note: It does not do this 'live'. When the measurement is finished, untick and retick the graph
+				self.emit('results', {'Delay': math.nan, 'X': math.nan, 'Y': math.nan } )
 
-		self.emit('progress', 5)
+			log.info("Initialising gathering")
+			err, msg = xpsHelp.InitXPSGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, self.lockin.time_constant)
+			
+			# Check for errors
+			if err != 0:
+				# Get XPS error string
+				log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+				self.emit('status', Procedure.FAILED)
+				return
 
-		if self.should_stop():
-			return
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
 
-		log.info("Running gathering")
-		err, msg = xpsHelp.RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
-		
-		# Check for errors
-		if err != 0:
-			# Get XPS error string
-			log.error(xpsHelp.GetXPSErrorString(self.xps, err))
-			self.emit('status', Procedure.FAILED)
-			return
+			if self.should_stop():
+				return
 
-		self.emit('progress', 90)
+			log.info("Running gathering")
+			err, msg = xpsHelp.RunGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+			
+			# Check for errors
+			if err != 0:
+				# Get XPS error string
+				log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+				self.emit('status', Procedure.FAILED)
+				return
 
-		if self.should_stop():
-			return
+			# self.emit('progress', 90)
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
 
-		log.info("Downloading gathering file")
-		xpsHelp.GetGatheringFile(self.xps)
+			if self.should_stop():
+				return
 
-		self.emit('progress', 95)
+			log.info("Downloading gathering file")
+			xpsHelp.GetGatheringFile(self.xps)
 
-		if self.should_stop():
-			return
+			# self.emit('progress', 95)
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
 
-		log.info("Reading gathering file")
-		self.data = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
+			if self.should_stop():
+				return
 
-		if self.should_stop():
-			return
+			log.info("Reading gathering file")
+			tempData = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
 
-		# Emit data one index at a time
-		for i in range(len(self.data["Delay"])):
-			try:
-				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i], 'SigMon': self.data["SigMon"][i]}
-			except:
-				curData = {'Delay': self.data["Delay"][i], 'X': self.data["X"][i], 'Y': self.data["Y"][i]}
-			self.emit('results', curData)
+			if self.repeats > 1:
+				self.data['Delay'] = tempData["Delay"]
+				self.data['X'].append(tempData["X"])
+				self.data['Y'].append(tempData["Y"])
+				self.data['SigMon'].append(tempData["SigMon"])
+			else:
+				self.data = tempData
+
+			if self.should_stop():
+				return
+
+			# Emit data one index at a time
+			for i in range(len(tempData["Delay"])):
+				try:
+					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i], 'SigMon': self.data["SigMon"][i]}
+				except:
+					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i]}
+				self.emit('results', curData)
 	
 	def execute(self):
 		if self.scanType == 'Gathering':
@@ -416,7 +454,10 @@ class TDSProcedure(Procedure):
 
 	def emitFFT(self):
 		# FFT the data stored in 'self.data'
-		freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
+		if (self.repeats > 1):
+			freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'][0])
+		else:
+			freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
 
 		# Store the FFT to the data dictionary
 		self.data['Freq'] = freq
@@ -540,11 +581,11 @@ class TDSProcedure(Procedure):
 		if self.scanType == 'Gathering':
 			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
 			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
-			duration = distance / speed
+			duration = (distance / speed) * self.repeats
 
 
 		elif self.scanType == 'Step Scan':
-			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 2.0
+			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 3.0 * self.repeats
 
 
 		elif self.scanType == 'Read Lockin' or self.scanType == 'Goto Delay':
@@ -559,6 +600,6 @@ class TDSProcedure(Procedure):
 		self.xps = xps
 
 	def shutdown(self):
-		self.trySaveFile()
+		# self.trySaveFile()
 		self.xps = None
 	
