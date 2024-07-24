@@ -2,6 +2,7 @@
 # IMPORTS
 ####################################################################
 import os
+from pathlib import Path
 from newportxps import NewportXPS
 import math
 import csv
@@ -42,8 +43,11 @@ def InitXPS(ip, user = "Administrator", password = "Administrator"):
 	# 'known_hosts' filepath
 	kfFilepath = "{}\\.ssh\\known_hosts.".format(os.path.expanduser('~'))
 
+
 	# Check if the 'known_hosts' file exists
 	if not os.path.exists(kfFilepath):
+		# Create directory if it doesn't exist
+		Path(os.path.dirname(kfFilepath)).mkdir(parents=True, exist_ok=True)
 		# Gets the ssh keys from the xps and store to 'known_hosts'
 		os.system("ssh-keyscan {} > {}".format(ip, kfFilepath))
 
