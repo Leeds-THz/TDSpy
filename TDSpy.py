@@ -28,7 +28,7 @@ from pymeasure.log import console_log
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
 # from pymeasure.display.windows.managed_dock_window import ManagedDockWindow
-from pymeasure.experiment import Procedure, Results
+from pymeasure.experiment import Procedure, Results, unique_filename
 from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
@@ -100,6 +100,15 @@ class TDSWindow(ManagedWindow):
 
 		# Pass the XPS instance
 		procedure.setXPS(self.xps)
+
+		# Pass the save location
+		procedure.setSaveLocation(unique_filename(
+                    self.directory,
+                    prefix=self.file_input.filename_base,
+                    datetimeformat="",
+                    procedure=procedure,
+                    ext=self.file_input.filename_extension,
+                ))
 
 		# Call parent queue function to start the procedure + save data etc.
 		super().queue(procedure)

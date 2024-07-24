@@ -470,9 +470,24 @@ class TDSProcedure(Procedure):
 
 	def pymeasureSave(self, savepath):
 		# Copy the current temp file to the savepath
-		shutil.copy(self.curTempFile, savepath)
+		shutil.copy(self.savepath, savepath)
 
 	def joshSave(self, savepath):
+		# Save pymeasure file to settings folder
+		curFolder = os.path.dirname(savepath)
+		settingsSavepath = os.path.join(curFolder, "settings")
+
+		# Check if settings folder exists
+		if not os.path.exists(settingsSavepath):
+			# Create settings folder
+			os.mkdir(settingsSavepath)
+
+		# Create the full path to save the pymeasure file
+		settingsSavepath = os.path.join(settingsSavepath, os.path.basename(savepath) + ".pym")
+
+		# Move the pymeasure data file to the settings location
+		self.pymeasureSave(settingsSavepath)
+
 		# Create savefile
 		with open(savepath, 'w') as datFile:
 			writer = csv.writer(datFile, delimiter='\t', lineterminator='\n')
@@ -503,77 +518,67 @@ class TDSProcedure(Procedure):
 					curSigMon = "NaN"
 
 				writer.writerow([curDelay, curX, curY, curFreq, curFFT, curSigMon])
-
-
-		# Save pymeasure file to settings folder
-		curFolder = os.path.dirname(savepath)
-		settingsSavepath = os.path.join(curFolder, "settings")
-
-		# Check if settings folder exists
-		if not os.path.exists(settingsSavepath):
-			# Create settings folder
-			os.mkdir(settingsSavepath)
 		
-		# Create the full path to save the pymeasure file
-		settingsSavepath = os.path.join(settingsSavepath, os.path.basename(savepath) + ".pym")
 
-		self.pymeasureSave(settingsSavepath)
-
-		
 	def trySaveFile(self):
-		# Checks if the flag 'saveOnShutdown' is enabled
-		# This flag should be set if needed for the given scan type in 'execute()'
-		if self.saveOnShutdown:
-			# Check if the file is to be named without bringing up a dialog
-			if self.autoFileNameControl:
-				fileCount = 1
+		# Check if file needs to be converted
+		if self.outputFormat == 'Josh File':
+			self.joshSave(self.savepath)
 
-				autoNameBase = self.autoFileBaseName
+	# def trySaveFileOld(self):
+	# 	# Checks if the flag 'saveOnShutdown' is enabled
+	# 	# This flag should be set if needed for the given scan type in 'execute()'
+	# 	if self.saveOnShutdown:
+	# 		# Check if the file is to be named without bringing up a dialog
+	# 		if self.autoFileNameControl:
+	# 			fileCount = 1
 
-				if autoNameBase == " ":
-					autoNameBase = ""
+	# 			autoNameBase = self.autoFileBaseName
 
-				# Add to the base auto file name if instrument control has been selected
-				# Voltage
-				if self.keithleyControl:
-					autoNameBase = "{}_{}V".format(autoNameBase, self.keithleyVoltage)
-				# Filter Wheel
-				if self.filterControl:
-					autoNameBase = "{}_FilterPos={}".format(autoNameBase, self.filterPosition)
-				# XPS 2
-				if self.xps2Control:
-					autoNameBase = "{}_delay={}ps".format(autoNameBase, self.xps2Delay)
+	# 			if autoNameBase == " ":
+	# 				autoNameBase = ""
 
-				# Get the full path of the auto-named file
-				autoFilePath = os.path.join(self.defaultDir, autoNameBase)
+	# 			# Add to the base auto file name if instrument control has been selected
+	# 			# Voltage
+	# 			if self.keithleyControl:
+	# 				autoNameBase = "{}_{}V".format(autoNameBase, self.keithleyVoltage)
+	# 			# Filter Wheel
+	# 			if self.filterControl:
+	# 				autoNameBase = "{}_FilterPos={}".format(autoNameBase, self.filterPosition)
+	# 			# XPS 2
+	# 			if self.xps2Control:
+	# 				autoNameBase = "{}_delay={}ps".format(autoNameBase, self.xps2Delay)
 
-				curSavePath = autoFilePath + ".dat"
+	# 			# Get the full path of the auto-named file
+	# 			autoFilePath = os.path.join(self.defaultDir, autoNameBase)
 
-				# Check if the file exists
-				# If it does, append number to end and increment
-				while os.path.exists(curSavePath):
-					fileCount += 1
-					curSavePath = autoFilePath + "_{}".format(fileCount) + ".dat"
+	# 			curSavePath = autoFilePath + ".dat"
 
-				# Build the complete filepath
-				savepath = curSavePath
-			else:
-				# Bring up a save dialog
-				savepath = ChooseSaveFile()
+	# 			# Check if the file exists
+	# 			# If it does, append number to end and increment
+	# 			while os.path.exists(curSavePath):
+	# 				fileCount += 1
+	# 				curSavePath = autoFilePath + "_{}".format(fileCount) + ".dat"
+
+	# 			# Build the complete filepath
+	# 			savepath = curSavePath
+	# 		else:
+	# 			# Bring up a save dialog
+	# 			savepath = ChooseSaveFile()
 			
-			# Check that a file was selected
-			if savepath != '':
-				log.info("Saving data to " + savepath)
+	# 		# Check that a file was selected
+	# 		if savepath != '':
+	# 			log.info("Saving data to " + savepath)
 				
-				# Check what format to save the file as
-				if self.outputFormat == 'pymeasure':
-					self.pymeasureSave(savepath)
-				elif self.outputFormat == 'Josh File':
-					self.joshSave(savepath)
+	# 			# Check what format to save the file as
+	# 			if self.outputFormat == 'pymeasure':
+	# 				self.pymeasureSave(savepath)
+	# 			elif self.outputFormat == 'Josh File':
+	# 				self.joshSave(savepath)
 
-			# No file selected
-			else:
-				log.info("Data not saved")
+	# 		# No file selected
+	# 		else:
+	# 			log.info("Data not saved")
 
 	def estimateEndTime(self):
 		curStartTime = datetime.now()
@@ -599,7 +604,10 @@ class TDSProcedure(Procedure):
 	def setXPS(self, xps):
 		self.xps = xps
 
+	def setSaveLocation(self, savepath):
+		self.savepath = savepath
+
 	def shutdown(self):
-		# self.trySaveFile()
+		self.trySaveFile()
 		self.xps = None
 	
