@@ -55,12 +55,12 @@ def GetFFTAbs(x, y):
 ####################################################################
 class TDSProcedure(Procedure):
 	# Scan Type
-	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'Goto Delay', 'Read Lockin'])
+	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'External Gathering', 'Goto Delay', 'Read Lockin'])
 
 	# Scan Inputs
-	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0)
-	stepDelay = FloatParameter('Step Size', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=0.01)
-	stopDelay = FloatParameter('End Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering', units='ps', default=10)
+	startDelay = FloatParameter('Start Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering' or v == 'External Gathering', units='ps', default=0)
+	stepDelay = FloatParameter('Step Size', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering' or v == 'External Gathering', units='ps', default=0.01)
+	stopDelay = FloatParameter('End Step', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering' or v == 'External Gathering', units='ps', default=10)
 
 	gotoDelay = FloatParameter('Goto Delay', group_by='scanType', group_condition='Goto Delay', units='ps', default=0)
 
@@ -87,8 +87,8 @@ class TDSProcedure(Procedure):
 	xps2Follow = BooleanParameter('Scan Follows XPS 2', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default=False)
 
 	# Lockin Inputs
-	lockinGPIB = IntegerParameter('Lockin GPIB', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=20)
-	lockinControl = BooleanParameter('Control Lockin', group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default=False)
+	lockinGPIB = IntegerParameter('Lockin GPIB', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering' or v == 'Read Lockin', default=12)
+	lockinControl = BooleanParameter('Control Lockin', group_by='scanType', group_condition=lambda v: v == 'Step Scan' or v == 'Gathering' or v == 'Read Lockin', default=False)
 	lockinWait = FloatParameter('Wait Time', group_by='lockinControl', group_condition=True, units='s', default=20e-3)
 	lockinSen = FloatParameter('Sensitivity', group_by='lockinControl', group_condition=True, units='mV', default=100)
 	
@@ -112,14 +112,14 @@ class TDSProcedure(Procedure):
 	outputFormat = ListParameter('Output Format', choices=['Josh File', 'pymeasure'], group_by='scanType', group_condition=lambda v: v != 'Goto Delay', default='Josh File')
 
 	# Repeat 
-	repeats = IntegerParameter('Repeats', group_by='scanType', group_condition=lambda v:  v == 'Step Scan' or v == 'Gathering', default=1)
+	repeats = IntegerParameter('Repeats', group_by='scanType', group_condition=lambda v:  v == 'Step Scan' or v == 'Gathering' or v == 'External Gathering', default=1)
 
 	# Sequence Repeat 
 	# NOTE: This parameter doesn't do anything. It is used as a quick fix to allow repeats in the sequencer
 	sequenceRepeats = IntegerParameter('Sequence Repeats', group_by='scanType', group_condition=lambda v:  v == ' ', default=0)
 
 	# Defines what data will be emitted for the main window
-	DATA_COLUMNS = ['Delay', 'X', 'Y', 'SigMon', 'Freq', 'FFT']
+	DATA_COLUMNS = ['Delay', 'X', 'Y', 'XAvg', 'YAvg', 'SigMon', 'Freq', 'FFT']
 
 	saveOnShutdown = False
 
@@ -128,13 +128,13 @@ class TDSProcedure(Procedure):
 
 	def startup(self):
 		# Main dictionary to store data
-		self.data = {'Delay': [], 'X':[], 'Y':[], 'SigMon': [], 'Freq':[], 'FFT':[]}
+		self.data = {'Delay': [], 'X':[], 'Y':[], 'XAvg': [], 'YAvg': [], 'SigMon': [], 'Freq':[], 'FFT':[]}
 
 		self.startTime = datetime.now()
 
 		log.info("Startup")
 
-		if self.scanType != 'Goto Delay':
+		if not (self.scanType == 'Goto Delay' or self.scanType == 'External Gathering'):
 			# Try and connect to Lock-In
 			try:
 				# Connect to the given GPIB port
@@ -412,20 +412,103 @@ class TDSProcedure(Procedure):
 			# Emit data one index at a time
 			for i in range(len(tempData["Delay"])):
 				try:
-					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i], 'SigMon': self.data["SigMon"][i]}
+					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i], 'SigMon': tempData["SigMon"][i]}
 				except:
 					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i]}
 				self.emit('results', curData)
+				# sleep(0.001)
+
+	def executeExternalGatheringScan(self):
+		counter = 1
+		for repeat in range(self.repeats):
+			if repeat != 0:
+				# This breaks the plot into multiple segments when plotting
+				# Note: It does not do this 'live'. When the measurement is finished, untick and retick the graph
+				self.emit('results', {'Delay': math.nan, 'X': math.nan, 'Y': math.nan } )
+
+			log.info("Initialising external gathering")
+			err, msg = xpsHelp.InitXPSExternalGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, 1e-3)
+			
+			# Check for errors
+			if err != 0:
+				# Get XPS error string
+				log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+				self.emit('status', Procedure.FAILED)
+				return
+
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
+
+			if self.should_stop():
+				return
+
+			log.info("Running external gathering")
+			err, msg = xpsHelp.RunExternalGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+			
+			# Check for errors
+			if err != 0:
+				# Get XPS error string
+				log.error(xpsHelp.GetXPSErrorString(self.xps, err))
+				self.emit('status', Procedure.FAILED)
+				return
+
+			# self.emit('progress', 90)
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
+
+			if self.should_stop():
+				return
+
+			log.info("Downloading external gathering file")
+			xpsHelp.GetExternalGatheringFile(self.xps)
+
+			# self.emit('progress', 95)
+			self.emit('progress', 100 * counter / (self.repeats * 3))
+			counter += 1
+
+			if self.should_stop():
+				return
+
+			log.info("Reading external gathering file")
+			tempData = xpsHelp.ReadExternalGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+
+			if self.repeats > 1:
+				self.data['Delay'] = tempData["Delay"]
+				self.data['X'].append(tempData["X"])
+				self.data['Y'].append(tempData["Y"])
+				self.data['SigMon'].append(tempData["SigMon"])
+			else:
+				self.data = tempData
+
+			if self.should_stop():
+				return
+
+			# Emit data one index at a time
+			for i in range(len(tempData["Delay"])):
+				try:
+					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i], 'SigMon': tempData["SigMon"][i]}
+				except:
+					curData = {'Delay': tempData["Delay"][i], 'X': tempData["X"][i], 'Y': tempData["Y"][i]}
+				self.emit('results', curData)
+	
 	
 	def execute(self):
 		if self.scanType == 'Gathering':
 			self.saveOnShutdown = True
 			self.executeGatheringScan()
+			self.emitAverage()
+			self.emitFFT()
+
+		if self.scanType == 'External Gathering':
+			self.saveOnShutdown = True
+			self.executeExternalGatheringScan()
+			self.emitAverage()
 			self.emitFFT()
 
 		elif self.scanType == 'Step Scan':
 			self.saveOnShutdown = True
 			self.executeStepScan()
+			self.emitAverage()
 			self.emitFFT()
 
 		elif self.scanType == 'Goto Delay':
@@ -452,12 +535,32 @@ class TDSProcedure(Procedure):
 	def setDefaultDir(self, path):
 		self.defaultDir = path
 
+	def emitAverage(self):
+		if self.repeats == 1:
+			self.data['XAvg'] = self.data['X']
+			self.data['YAvg'] = self.data['Y']
+		else:
+			for i in range(len(self.data['Delay'])):
+				curValX = 0
+				curValY = 0
+				for j in range(self.repeats):
+					curValX += self.data['X'][j][i]
+					curValY += self.data['Y'][j][i]
+				self.data['XAvg'].append(curValX / self.repeats)
+				self.data['YAvg'].append(curValY / self.repeats)
+		
+		# Emit the averaged data
+		for i in range(len(self.data['Delay'])):
+			curData = {'Delay': self.data['Delay'][i], 'XAvg': self.data['XAvg'][i], 'YAvg': self.data['YAvg'][i]}
+			self.emit('results', curData)
+
 	def emitFFT(self):
 		# FFT the data stored in 'self.data'
-		if (self.repeats > 1):
-			freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'][0])
-		else:
-			freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
+		# if (self.repeats > 1):
+		# 	freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'][0])
+		# else:
+		# 	freq, fftX = GetFFTAbs(self.data['Delay'], self.data['X'])
+		freq, fftX = GetFFTAbs(self.data['Delay'], self.data['XAvg'])
 
 		# Store the FFT to the data dictionary
 		self.data['Freq'] = freq
@@ -492,32 +595,59 @@ class TDSProcedure(Procedure):
 		with open(savepath, 'w') as datFile:
 			writer = csv.writer(datFile, delimiter='\t', lineterminator='\n')
 			
+			headerRow = ['Delay']
+			unitRow = ['ps']
+
+			for i in range(self.repeats):
+				headerRow.extend(['X', 'Y', 'SigMon'])
+				unitRow.extend(['mV', 'mV', 'V'])
+
 			# Write headers
-			writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT', 'SigMon']) # Headers
-			writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp', 'V']) # Units
+			writer.writerow(headerRow) # Headers
+			writer.writerow(unitRow) # Units
+
+			# writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT', 'SigMon']) # Headers
+			# writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp', 'V']) # Units
 
 			# Write data
 			for i in range(len(self.data['Delay'])):
-				curDelay = str(self.data['Delay'][i])
-				curX = str(self.data['X'][i])
-				curY = str(self.data['Y'][i])
+				curLine = [str(self.data['Delay'][i])]
 
-				try:
-					curFreq = str(self.data['Freq'][i])
-				except:
-					curFreq = "NaN"
 
-				try:
-					curFFT = str(self.data['FFT'][i])
-				except:
-					curFFT = "NaN"
+				if self.repeats == 1:
+					curLine.extend([str(self.data['X'][i]), str(self.data['Y'][i])])
 
-				try:
-					curSigMon = str(self.data['SigMon'][i])
-				except:
-					curSigMon = "NaN"
+					try:
+						curLine.append(str(self.data['SigMon'][i]))
+					except:
+						curLine.append("NaN")
 
-				writer.writerow([curDelay, curX, curY, curFreq, curFFT, curSigMon])
+				else:
+					for j in range(self.repeats):
+						curLine.extend([str(self.data['X'][j][i]), str(self.data['Y'][j][i])])
+
+						try:
+							curLine.append(str(self.data['SigMon'][j][i]))
+						except:
+							curLine.append("NaN")
+
+				writer.writerow(curLine)
+				# try:
+				# 	curFreq = str(self.data['Freq'][i])
+				# except:
+				# 	curFreq = "NaN"
+
+				# try:
+				# 	curFFT = str(self.data['FFT'][i])
+				# except:
+				# 	curFFT = "NaN"
+
+				# try:
+				# 	curSigMon = str(self.data['SigMon'][i])
+				# except:
+				# 	curSigMon = "NaN"
+
+				# writer.writerow([curDelay, curX, curY, curFreq, curFFT, curSigMon])
 		
 
 	def trySaveFile(self):
@@ -588,6 +718,10 @@ class TDSProcedure(Procedure):
 			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
 			duration = (distance / speed) * self.repeats
 
+		elif self.scanType == 'External Gathering':
+			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
+			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
+			duration = (distance / speed) * self.repeats
 
 		elif self.scanType == 'Step Scan':
 			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 3.0 * self.repeats

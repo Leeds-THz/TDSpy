@@ -72,6 +72,17 @@ def GotoDelay(xps, stage, delay, zeroOffset, passes, reverse):
 
 	return err, msg
 
+def GetXPSErrorString(xps, errorCode):
+	# Check for errors
+	if errorCode != 0:
+		# Get XPS error string
+		_, errString = xps._xps.ErrorStringGet(xps._sid, errorCode)
+
+		return errString
+	else:
+		return "No XPS Error"
+
+
 ####################################################################
 # GATHERING FUNCTIONS
 ####################################################################
@@ -231,13 +242,174 @@ def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse,
 	else:
 		return {"Delay": delayInterp, "X": xInterp, "Y": yInterp}
 
-def GetXPSErrorString(xps, errorCode):
+####################################################################
+# EXTERNAL GATHERING FUNCTIONS
+####################################################################
+
+def GetExternalGatheringFile(xps, localFile = None):
+	# Delete existing gathering file
+	if localFile == None:
+		localFile = 'Gathering.dat'
+	
+	if os.path.exists(localFile):
+		os.remove(localFile)
+
+	xps.ftpconn.connect()
+
+	xps.ftpconn._conn.get('/Admin/Public/Gathering/GatheringExternal.dat', localFile)
+
+	xps.ftpconn.close()
+
+
+def InitXPSExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True):
+	scanStageSpeed = GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes) # mm/s
+	scanSteps = ConvertPsToMm(stepDelay, 0, passes, False) # mm
+	scanPeriod = scanSteps / scanStageSpeed # s
+
+	expectedPoints = int(math.floor(((stopDelay - startDelay) / stepDelay) + 2))
+	xpsDivisor = int(math.floor(scanPeriod * 10000))
+
+	# Kill Any Gathering Currently Running
+	err, msg = xps._xps.GatheringStop(xps._sid)
+
 	# Check for errors
-	if errorCode != 0:
-		# Get XPS error string
-		_, errString = xps._xps.ErrorStringGet(xps._sid, errorCode)
+	if err != 0:
+		return err, msg
+	
+	err, msg = xps._xps.GatheringReset(xps._sid)
 
-		return errString
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Get max velocity settings
+	maxVeloAcc = xps._xps.PositionerMaximumVelocityAndAccelerationGet(xps._sid, stage)
+
+	# Set velocity to max
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, maxVeloAcc[1], maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Move stage to start pos
+	xps.move_stage(stage, ConvertPsToMm(startDelay, zeroOffset, passes, reverse))
+
+	# Set stage velocity based on required THz bandwidth
+	err, msg = xps._xps.PositionerSGammaParametersSet(xps._sid, stage, scanStageSpeed, maxVeloAcc[2], 0.005, 0.05)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+
+	# Kill Any Gathering Currently Running
+	err, msg = xps._xps.GatheringStop(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+	
+	err, msg = xps._xps.GatheringReset(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Set gathering config
+	if extraGPIO:
+		err, msg = xps._xps.GatheringExternalConfigurationSet(xps._sid, ["{}.ExternalLatchPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2", "GPIO4.ADC3"])
+	else :
+		err, msg = xps._xps.GatheringExternalConfigurationSet(xps._sid, ["{}.ExternalLatchPosition".format(stage), "GPIO4.ADC1", "GPIO4.ADC2"])
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Set event trigger
+	err, msg = xps._xps.EventExtendedConfigurationTriggerSet(xps._sid, ("{}.SGamma.MotionStart".format(stage),), ("",), ("",), ("",), ("",))
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Get Max number of data points
+	maxPoints = xps._xps.GatheringExternalCurrentNumberGet(xps._sid)[2]
+
+	# Set event action
+	err, msg = xps._xps.EventExtendedConfigurationActionSet(xps._sid, ("ExternalGatheringRun",), (str(maxPoints),), (str(1),), ("",), ("",))
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Event ext. Start
+	err, msg = xps._xps.EventExtendedStart(xps._sid)
+
+	# Check for errors
+	return err, msg
+	
+
+def RunExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, localFile = None):
+	# Move to end position
+	xps.move_stage(stage, ConvertPsToMm(stopDelay, zeroOffset, passes, reverse))
+
+	# External Gathering stop + save
+	err, msg = xps._xps.GatheringExternalStopAndSave(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Get external gathering file
+	GetExternalGatheringFile(xps, localFile)
+
+	return err, msg
+
+def ReadExternalGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, localFile = None, headerLines = 2, extraGPIO = True):
+	if localFile == None:
+		localFile = "Gathering.dat"
+	
+	# Empty variables to store gathering data to
+	delayOn = []
+	delayOff = []
+	sigOn = []
+	sigOff = []
+	sigMon = []
+
+	# Open gathering file
+	with open(localFile, mode='r') as dataFile:
+		dataReader = csv.reader(dataFile, delimiter='\t')
+
+		# Skip header lines
+		for i in range(headerLines):
+			next(dataReader, None)
+
+		# Read file row-by-row
+		for row in dataReader:
+			# Get current data
+			curDelay = ConvertMmToPs(float(row[0]), zeroOffset, passes, reverse)
+			curData = float(row[1])
+			curChop = float(row[2])
+
+			# Check if chopper signal is above or below threshold
+			threshold = 2
+			if (curChop >= threshold):
+				delayOn.append(curDelay)
+				sigOn.append(curData)
+			else:
+				delayOff.append(curDelay)
+				sigOff.append(curData)
+
+			# if extraGPIO:
+			# 	sigMon.append(float(row[3]))
+
+	# Interpolate data
+	delayInterp = np.arange(startDelay, stopDelay + stepDelay, stepDelay)
+	onInterp = np.interp(delayInterp, delayOn, sigOn)
+	offInterp = np.interp(delayInterp, delayOff, sigOff)
+
+	if extraGPIO:
+		return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp, "SigMon": offInterp}
 	else:
-		return "No XPS Error"
-
+		return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp}
