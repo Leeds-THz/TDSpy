@@ -51,12 +51,20 @@ import json
 
 def LoadSettings():
 	# opening the file in read mode 
-	my_file = open("settings.ini", "r") 
-	
-	# reading the file 
-	data = my_file.read() 
+	with open("settings.ini", "r") as my_file:
+		# reading the file 
+		data = my_file.read() 
 
 	return json.loads(data)
+
+def SaveSettings(settings):
+	# Serialise
+	jsonObject = json.dumps(settings, indent=4)
+
+	# Write file
+	with open("settings.ini", "w") as my_file:
+		my_file.write(jsonObject)
+
 
 ####################################################################
 # Main Window
@@ -68,12 +76,12 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=tdsProc.TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'gotoDelay', 'thzBandwidth','xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'sequenceRepeats'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'gotoDelay', 'thzBandwidth', 'preScanWait', 'xpsAnalogueGain', 'xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'sequenceRepeats'],
 			displays=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'xpsStage', 'xps2Control', 'xps2Stage', 'xps2Delay', 'xps2Follow', 'lockinControl', 'keithleyControl', 'keithleyVoltage', 'filterControl', 'filterPosition'],
 			x_axis='Delay',
 			y_axis='X',
 			sequencer=True,
-            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'sequenceRepeats'],
+            sequencer_inputs=['startDelay', 'stepDelay', 'stopDelay', 'xps2Delay', 'keithleyVoltage', 'filterPosition', 'preScanWait', 'sequenceRepeats'],
 			hide_groups = True,
 			# directory_input=True,
 			inputs_in_scrollarea = True
@@ -109,6 +117,19 @@ class TDSWindow(ManagedWindow):
                     procedure=procedure,
                     ext=self.file_input.filename_extension,
                 ))
+
+		# Check if settings file should be overwritten
+		overwriteSettings = False
+
+		if self.settings['overwrite_default_directory_on_run'] and self.settings['default_directory'] != self.directory:
+			self.settings['default_directory'] = self.directory
+			overwriteSettings = True
+		if self.settings['overwrite_default_filename_on_run'] and self.settings['default_filename'] != self.file_input.filename_base:
+			self.settings['default_filename'] = self.file_input.filename_base
+			overwriteSettings = True
+		
+		if overwriteSettings:
+			SaveSettings(self.settings)
 
 		# Call parent queue function to start the procedure + save data etc.
 		super().queue(procedure)

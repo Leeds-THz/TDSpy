@@ -30,6 +30,7 @@ from pylablib.devices import Thorlabs
 from datetime import datetime, timedelta
 import random
 import math
+import statistics as stats
 
 ####################################################################
 # GENERAL FUNCTIONS
@@ -64,7 +65,11 @@ class TDSProcedure(Procedure):
 
 	gotoDelay = FloatParameter('Goto Delay', group_by='scanType', group_condition='Goto Delay', units='ps', default=0)
 
-	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition='Gathering', units='THz', default=15)
+	thzBandwidth = FloatParameter('THz Bandwidth', group_by='scanType', group_condition=lambda v: v == 'Gathering' or v == 'External Gathering', units='THz', default=15)
+
+	preScanWait = FloatParameter('Pre-Scan Wait', group_by='scanType', group_condition=lambda v: v == 'External Gathering', units='s', default=0.2)
+
+	xpsAnalogueGain = ListParameter('XPS Analogue Gain', choices=[1, 2, 4, 8], group_by='scanType', group_condition=lambda v: v == 'Gathering' or v == 'External Gathering', default=1)
 
 	# XPS Inputs
 	xpsIP = Parameter('XPS IP', group_by='scanType', group_condition=lambda v: v != 'Read Lockin', default="192.168.0.254")
@@ -119,7 +124,7 @@ class TDSProcedure(Procedure):
 	sequenceRepeats = IntegerParameter('Sequence Repeats', group_by='scanType', group_condition=lambda v:  v == ' ', default=0)
 
 	# Defines what data will be emitted for the main window
-	DATA_COLUMNS = ['Delay', 'X', 'Y', 'XAvg', 'YAvg', 'SigMon', 'Freq', 'FFT']
+	DATA_COLUMNS = ['Delay', 'X', 'Y', 'XAvg', 'YAvg', 'XStdDev', 'YStdDev', 'SigMon', 'Freq', 'FFT']
 
 	saveOnShutdown = False
 
@@ -128,7 +133,7 @@ class TDSProcedure(Procedure):
 
 	def startup(self):
 		# Main dictionary to store data
-		self.data = {'Delay': [], 'X':[], 'Y':[], 'XAvg': [], 'YAvg': [], 'SigMon': [], 'Freq':[], 'FFT':[]}
+		self.data = {'Delay': [], 'X':[], 'Y':[], 'XAvg': [], 'YAvg': [], 'XStdDev': [], 'YStdDev': [], 'SigMon': [], 'Freq':[], 'FFT':[]}
 
 		self.startTime = datetime.now()
 
@@ -396,7 +401,7 @@ class TDSProcedure(Procedure):
 				return
 
 			log.info("Reading gathering file")
-			tempData = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen)
+			tempData = xpsHelp.ReadGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.lockinSen, analogueGain=self.xpsAnalogueGain)
 
 			if self.repeats > 1:
 				self.data['Delay'] = tempData["Delay"]
@@ -427,7 +432,7 @@ class TDSProcedure(Procedure):
 				self.emit('results', {'Delay': math.nan, 'X': math.nan, 'Y': math.nan } )
 
 			log.info("Initialising external gathering")
-			err, msg = xpsHelp.InitXPSExternalGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, 1e-3)
+			err, msg = xpsHelp.InitXPSExternalGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, self.thzBandwidth, 1e-3, analogueGain=self.xpsAnalogueGain)
 			
 			# Check for errors
 			if err != 0:
@@ -441,6 +446,10 @@ class TDSProcedure(Procedure):
 
 			if self.should_stop():
 				return
+			
+			if self.preScanWait > 0:
+				# Short wait for stage to settle
+				sleep(self.preScanWait)
 
 			log.info("Running external gathering")
 			err, msg = xpsHelp.RunExternalGathering(self.xps, self.xpsStage, self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
@@ -470,7 +479,7 @@ class TDSProcedure(Procedure):
 				return
 
 			log.info("Reading external gathering file")
-			tempData = xpsHelp.ReadExternalGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse)
+			tempData = xpsHelp.ReadExternalGathering(self.startDelay, self.stepDelay, self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse, analogueGain=self.xpsAnalogueGain)
 
 			if self.repeats > 1:
 				self.data['Delay'] = tempData["Delay"]
@@ -539,20 +548,25 @@ class TDSProcedure(Procedure):
 		if self.repeats == 1:
 			self.data['XAvg'] = self.data['X']
 			self.data['YAvg'] = self.data['Y']
+
+			# Emit the averaged data
+			for i in range(len(self.data['Delay'])):
+				curData = {'Delay': self.data['Delay'][i], 'XAvg': self.data['XAvg'][i], 'YAvg': self.data['YAvg'][i]}
+				self.emit('results', curData)
 		else:
 			for i in range(len(self.data['Delay'])):
-				curValX = 0
-				curValY = 0
+				curValX = []
+				curValY = []
 				for j in range(self.repeats):
-					curValX += self.data['X'][j][i]
-					curValY += self.data['Y'][j][i]
-				self.data['XAvg'].append(curValX / self.repeats)
-				self.data['YAvg'].append(curValY / self.repeats)
-		
-		# Emit the averaged data
-		for i in range(len(self.data['Delay'])):
-			curData = {'Delay': self.data['Delay'][i], 'XAvg': self.data['XAvg'][i], 'YAvg': self.data['YAvg'][i]}
-			self.emit('results', curData)
+					curValX.append(self.data['X'][j][i])
+					curValY.append(self.data['Y'][j][i])
+				self.data['XAvg'].append(sum(curValX) / self.repeats)
+				self.data['YAvg'].append(sum(curValY) / self.repeats)
+				self.data['XStdDev'].append(stats.stdev(curValX))
+				self.data['YStdDev'].append(stats.stdev(curValY))
+
+				curData = {'Delay': self.data['Delay'][i], 'XAvg': self.data['XAvg'][i], 'YAvg': self.data['YAvg'][i], 'XStdDev': self.data['XStdDev'][i], 'YStdDev': self.data['YStdDev'][i]}
+				self.emit('results', curData)
 
 	def emitFFT(self):
 		# FFT the data stored in 'self.data'
@@ -606,9 +620,6 @@ class TDSProcedure(Procedure):
 			writer.writerow(headerRow) # Headers
 			writer.writerow(unitRow) # Units
 
-			# writer.writerow(['Delay', 'X', 'Y', 'FFT Freq', 'FFT', 'SigMon']) # Headers
-			# writer.writerow(['ps', 'mV', 'mV', 'THz', 'amp', 'V']) # Units
-
 			# Write data
 			for i in range(len(self.data['Delay'])):
 				curLine = [str(self.data['Delay'][i])]
@@ -632,83 +643,11 @@ class TDSProcedure(Procedure):
 							curLine.append("NaN")
 
 				writer.writerow(curLine)
-				# try:
-				# 	curFreq = str(self.data['Freq'][i])
-				# except:
-				# 	curFreq = "NaN"
-
-				# try:
-				# 	curFFT = str(self.data['FFT'][i])
-				# except:
-				# 	curFFT = "NaN"
-
-				# try:
-				# 	curSigMon = str(self.data['SigMon'][i])
-				# except:
-				# 	curSigMon = "NaN"
-
-				# writer.writerow([curDelay, curX, curY, curFreq, curFFT, curSigMon])
-		
 
 	def trySaveFile(self):
 		# Check if file needs to be converted
 		if self.outputFormat == 'Josh File':
 			self.joshSave(self.savepath)
-
-	# def trySaveFileOld(self):
-	# 	# Checks if the flag 'saveOnShutdown' is enabled
-	# 	# This flag should be set if needed for the given scan type in 'execute()'
-	# 	if self.saveOnShutdown:
-	# 		# Check if the file is to be named without bringing up a dialog
-	# 		if self.autoFileNameControl:
-	# 			fileCount = 1
-
-	# 			autoNameBase = self.autoFileBaseName
-
-	# 			if autoNameBase == " ":
-	# 				autoNameBase = ""
-
-	# 			# Add to the base auto file name if instrument control has been selected
-	# 			# Voltage
-	# 			if self.keithleyControl:
-	# 				autoNameBase = "{}_{}V".format(autoNameBase, self.keithleyVoltage)
-	# 			# Filter Wheel
-	# 			if self.filterControl:
-	# 				autoNameBase = "{}_FilterPos={}".format(autoNameBase, self.filterPosition)
-	# 			# XPS 2
-	# 			if self.xps2Control:
-	# 				autoNameBase = "{}_delay={}ps".format(autoNameBase, self.xps2Delay)
-
-	# 			# Get the full path of the auto-named file
-	# 			autoFilePath = os.path.join(self.defaultDir, autoNameBase)
-
-	# 			curSavePath = autoFilePath + ".dat"
-
-	# 			# Check if the file exists
-	# 			# If it does, append number to end and increment
-	# 			while os.path.exists(curSavePath):
-	# 				fileCount += 1
-	# 				curSavePath = autoFilePath + "_{}".format(fileCount) + ".dat"
-
-	# 			# Build the complete filepath
-	# 			savepath = curSavePath
-	# 		else:
-	# 			# Bring up a save dialog
-	# 			savepath = ChooseSaveFile()
-			
-	# 		# Check that a file was selected
-	# 		if savepath != '':
-	# 			log.info("Saving data to " + savepath)
-				
-	# 			# Check what format to save the file as
-	# 			if self.outputFormat == 'pymeasure':
-	# 				self.pymeasureSave(savepath)
-	# 			elif self.outputFormat == 'Josh File':
-	# 				self.joshSave(savepath)
-
-	# 		# No file selected
-	# 		else:
-	# 			log.info("Data not saved")
 
 	def estimateEndTime(self):
 		curStartTime = datetime.now()
@@ -720,8 +659,8 @@ class TDSProcedure(Procedure):
 
 		elif self.scanType == 'External Gathering':
 			distance = abs(xpsHelp.ConvertPsToMm(self.startDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse) - xpsHelp.ConvertPsToMm(self.stopDelay, self.xpsZeroOffset, self.xpsPasses, self.xpsReverse))
-			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, self.lockinWait, 4, self.xpsPasses)
-			duration = (distance / speed) * self.repeats
+			speed = xpsHelp.GetBandwidthStageSpeed(self.thzBandwidth, 1e-3, 4, self.xpsPasses)
+			duration = ((distance / speed) + self.preScanWait) * self.repeats
 
 		elif self.scanType == 'Step Scan':
 			duration = ((self.stopDelay - self.startDelay) / self.stepDelay) * self.lockinWait * 3.0 * self.repeats

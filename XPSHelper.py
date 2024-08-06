@@ -102,7 +102,7 @@ def GetGatheringFile(xps, localFile = None):
 	xps.ftpconn.close()
 
 
-def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True):
+def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True, analogueGain=1):
 	scanStageSpeed = GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes) # mm/s
 	scanSteps = ConvertPsToMm(stepDelay, 0, passes, False) # mm
 	scanPeriod = scanSteps / scanStageSpeed # s
@@ -118,6 +118,13 @@ def InitXPSGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, p
 		return err, msg
 	
 	err, msg = xps._xps.GatheringReset(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Set GPIO analogue gain
+	err, msg = xps._xps.GPIOAnalogGainSet(xps._sid, ["GPIO4.ADC1", "GPIO4.ADC2", "GPIO4.ADC3"], [analogueGain, analogueGain, analogueGain])
 
 	# Check for errors
 	if err != 0:
@@ -204,7 +211,7 @@ def RunGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passe
 
 	return err, msg
 	
-def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, lockinSensitivity, localFile = None, headerLines = 2, extraGPIO = True):
+def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, lockinSensitivity, localFile = None, headerLines = 2, extraGPIO = True, analogueGain=1):
 	if localFile == None:
 		localFile = "Gathering.dat"
 	
@@ -226,8 +233,8 @@ def ReadGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse,
 		for row in dataReader:
 			# Store data to variables
 			delay.append(ConvertMmToPs(float(row[0]), zeroOffset, passes, reverse))
-			sigX.append(float(row[1]) * lockinSensitivity * 0.1)
-			sigY.append(float(row[2]) * lockinSensitivity * 0.1)
+			sigX.append((float(row[1]) / analogueGain) * lockinSensitivity * 0.1)
+			sigY.append((float(row[2]) / analogueGain) * lockinSensitivity * 0.1)
 
 			if extraGPIO:
 				sigMon.append(float(row[3]))
@@ -261,7 +268,7 @@ def GetExternalGatheringFile(xps, localFile = None):
 	xps.ftpconn.close()
 
 
-def InitXPSExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True):
+def InitXPSExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, bandwidth, tc, tcToWait = 4, extraGPIO = True, analogueGain = 1):
 	scanStageSpeed = GetBandwidthStageSpeed(bandwidth, tc, tcToWait, passes) # mm/s
 	scanSteps = ConvertPsToMm(stepDelay, 0, passes, False) # mm
 	scanPeriod = scanSteps / scanStageSpeed # s
@@ -277,6 +284,13 @@ def InitXPSExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroO
 		return err, msg
 	
 	err, msg = xps._xps.GatheringReset(xps._sid)
+
+	# Check for errors
+	if err != 0:
+		return err, msg
+
+	# Set GPIO analogue gain
+	err, msg = xps._xps.GPIOAnalogGainSet(xps._sid, ["GPIO4.ADC1", "GPIO4.ADC2", "GPIO4.ADC3"], [analogueGain, analogueGain, analogueGain])
 
 	# Check for errors
 	if err != 0:
@@ -366,50 +380,76 @@ def RunExternalGathering(xps, stage, startDelay, stepDelay, stopDelay, zeroOffse
 
 	return err, msg
 
-def ReadExternalGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, localFile = None, headerLines = 2, extraGPIO = True):
+def ReadExternalGathering(startDelay, stepDelay, stopDelay, zeroOffset, passes, reverse, localFile = None, headerLines = 2, extraGPIO = True, analogueGain = 1, rawData = False):
 	if localFile == None:
 		localFile = "Gathering.dat"
 	
-	# Empty variables to store gathering data to
-	delayOn = []
-	delayOff = []
-	sigOn = []
-	sigOff = []
-	sigMon = []
+	
+	
+	if rawData:
+		# Empty variables to store gathering data to
+		delay = []
+		signal = []
+		chopSig = []
 
-	# Open gathering file
-	with open(localFile, mode='r') as dataFile:
-		dataReader = csv.reader(dataFile, delimiter='\t')
+		# Open gathering file
+		with open(localFile, mode='r') as dataFile:
+			dataReader = csv.reader(dataFile, delimiter='\t')
 
-		# Skip header lines
-		for i in range(headerLines):
-			next(dataReader, None)
+			# Skip header lines
+			for i in range(headerLines):
+				next(dataReader, None)
 
-		# Read file row-by-row
-		for row in dataReader:
-			# Get current data
-			curDelay = ConvertMmToPs(float(row[0]), zeroOffset, passes, reverse)
-			curData = float(row[1])
-			curChop = float(row[2])
+			# Read file row-by-row
+			for row in dataReader:
+				# Get current data
+				delay.append(ConvertMmToPs(float(row[0]), zeroOffset, passes, reverse))
+				signal.append(float(row[1]) / analogueGain)
+				chopSig.append(float(row[2]) / analogueGain)
 
-			# Check if chopper signal is above or below threshold
-			threshold = 2
-			if (curChop >= threshold):
-				delayOn.append(curDelay)
-				sigOn.append(curData)
-			else:
-				delayOff.append(curDelay)
-				sigOff.append(curData)
+		return {"Delay": delay, "X": signal, "Y": chopSig}
 
-			# if extraGPIO:
-			# 	sigMon.append(float(row[3]))
-
-	# Interpolate data
-	delayInterp = np.arange(startDelay, stopDelay + stepDelay, stepDelay)
-	onInterp = np.interp(delayInterp, delayOn, sigOn)
-	offInterp = np.interp(delayInterp, delayOff, sigOff)
-
-	if extraGPIO:
-		return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp, "SigMon": offInterp}
 	else:
-		return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp}
+		# Empty variables to store gathering data to
+		delayOn = []
+		delayOff = []
+		sigOn = []
+		sigOff = []
+		sigMon = []
+
+		# Open gathering file
+		with open(localFile, mode='r') as dataFile:
+			dataReader = csv.reader(dataFile, delimiter='\t')
+
+			# Skip header lines
+			for i in range(headerLines):
+				next(dataReader, None)
+
+			# Read file row-by-row
+			for row in dataReader:
+				# Get current data
+				curDelay = ConvertMmToPs(float(row[0]), zeroOffset, passes, reverse)
+				curData = float(row[1])
+				curChop = float(row[2])
+
+				# Check if chopper signal is above or below threshold
+				threshold = 2
+				if (curChop >= threshold):
+					delayOn.append(curDelay)
+					sigOn.append(curData)
+				else:
+					delayOff.append(curDelay)
+					sigOff.append(curData)
+
+				# if extraGPIO:
+				# 	sigMon.append(float(row[3]))
+
+		# Interpolate data
+		delayInterp = np.arange(startDelay, stopDelay + stepDelay, stepDelay)
+		onInterp = np.interp(delayInterp, delayOn, sigOn)
+		offInterp = np.interp(delayInterp, delayOff, sigOff)
+
+		if extraGPIO:
+			return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp, "SigMon": offInterp}
+		else:
+			return {"Delay": delayInterp, "X": onInterp - offInterp, "Y": onInterp}
