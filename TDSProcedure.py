@@ -15,7 +15,7 @@ from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
 # from pymeasure.display.windows.managed_dock_window import ManagedDockWindow
 from pymeasure.experiment import Procedure, Results
-from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter
+from pymeasure.experiment import BooleanParameter, IntegerParameter, FloatParameter, Parameter, ListParameter, Metadata
 import matplotlib.pyplot as plt
 from pymeasure.instruments.signalrecovery import DSP7265
 from pymeasure.instruments.keithley import Keithley2400
@@ -55,6 +55,8 @@ def GetFFTAbs(x, y):
 # THz Procedures
 ####################################################################
 class TDSProcedure(Procedure):
+	# PARAMETERS
+	################################################################
 	# Scan Type
 	scanType = ListParameter('Scan Type', choices=['Step Scan', 'Gathering', 'External Gathering', 'Goto Delay', 'Read Lockin'])
 
@@ -123,6 +125,46 @@ class TDSProcedure(Procedure):
 	# NOTE: This parameter doesn't do anything. It is used as a quick fix to allow repeats in the sequencer
 	sequenceRepeats = IntegerParameter('Sequence Repeats', group_by='scanType', group_condition=lambda v:  v == ' ', default=0)
 
+	# Metadata Inputs
+	metadataControl = BooleanParameter('Edit Metadata', default=False)
+	
+	emitterName = Parameter('Emitter', group_by='metadataControl', group_condition=True, default="")
+	emitterBias = FloatParameter('Emitter Bias', group_by='metadataControl', group_condition=True, units='V', default=0)
+	emitterOptPower = FloatParameter('Emitter Optical Power', group_by='metadataControl', group_condition=True, units='mW', default=0)
+	
+	detectorName = Parameter('Detector', group_by='metadataControl', group_condition=True, default="")
+	detectorBias = FloatParameter('Detector Bias', group_by='metadataControl', group_condition=True, units='V', default=0)
+	detectorOptPower = FloatParameter('Detector Optical Power', group_by='metadataControl', group_condition=True, units='mW', default=0)
+
+	sampleName = Parameter('Sample', group_by='metadataControl', group_condition=True, default="")
+	sampleTemp = FloatParameter('Sample Temperature', group_by='metadataControl', group_condition=True, units='K', default=0)
+	sampleBias = FloatParameter('Sample Bias', group_by='metadataControl', group_condition=True, units='V', default=0)
+	sampleOptPower = FloatParameter('Sample Optical Power', group_by='metadataControl', group_condition=True, units='mW', default=0)
+
+	otherDetails = Parameter('Other Details', group_by='metadataControl', group_condition=True, default="")
+
+
+	# METADATA
+	################################################################
+	
+	# emitterNameMeta = Metadata('Emitter', default="")
+	# emitterBiasMeta = Metadata('Emitter Bias', units='V', default=0)
+	# emitterOptPowerMeta = Metadata('Emitter Optical Power', units='mW', default=0)
+	
+	# detectorNameMeta = Metadata('Detector', default="")
+	# detectorBiasMeta = Metadata('Detector Bias', units='V', default=0)
+	# detectorOptPowerMeta = Metadata('Detector Optical Power', units='mW', default=0)
+
+	# sampleNameMeta = Metadata('Sample', default="")
+	# sampleTempMeta = Metadata('Sample Temperature', units='K', default=0)
+	# sampleBiasMeta = Metadata('Sample Bias', units='V', default=0)
+	# sampleOptPowerMeta = Metadata('Sample Optical Power', units='mW', default=0)
+
+
+	# otherDetailsMeta = Metadata('Other Details', default="")
+
+	# VARIABLES
+	################################################################	
 	# Defines what data will be emitted for the main window
 	DATA_COLUMNS = ['Delay', 'X', 'Y', 'XAvg', 'YAvg', 'XStdDev', 'YStdDev', 'SigMon', 'Freq', 'FFT']
 
@@ -131,6 +173,8 @@ class TDSProcedure(Procedure):
 	# Keeps track of when the measurement was started
 	startTime = None
 
+	# FUNCTIONS
+	################################################################
 	def startup(self):
 		# Main dictionary to store data
 		self.data = {'Delay': [], 'X':[], 'Y':[], 'XAvg': [], 'YAvg': [], 'XStdDev': [], 'YStdDev': [], 'SigMon': [], 'Freq':[], 'FFT':[]}
@@ -138,6 +182,9 @@ class TDSProcedure(Procedure):
 		self.startTime = datetime.now()
 
 		log.info("Startup")
+
+		# Set metadata
+		# self.emitterNameMeta = self.emitterName
 
 		if not (self.scanType == 'Goto Delay' or self.scanType == 'External Gathering'):
 			# Try and connect to Lock-In

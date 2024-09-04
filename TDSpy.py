@@ -76,7 +76,7 @@ class TDSWindow(ManagedWindow):
 	def __init__(self):
 		super().__init__(
 			procedure_class=tdsProc.TDSProcedure,
-			inputs=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'gotoDelay', 'thzBandwidth', 'preScanWait', 'xpsAnalogueGain', 'xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'sequenceRepeats'],
+			inputs=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'gotoDelay', 'thzBandwidth', 'preScanWait', 'xpsAnalogueGain', 'xpsIP','xpsStage','xpsPasses','xpsZeroOffset','xpsReverse', 'xps2Control', 'xps2Stage', 'xps2Passes', 'xps2ZeroOffset', 'xps2Reverse', 'xps2Delay', 'xps2Follow', 'lockinGPIB', 'lockinControl', 'lockinWait','lockinSen', 'keithleyControl', 'keithleyGPIB', 'keithleyVoltage', 'filterControl', 'filterAddress', 'filterPosition', 'autoFileNameControl', 'autoFileBaseName', 'outputFormat', 'sequenceRepeats', 'metadataControl', 'emitterName', 'emitterBias', 'emitterOptPower', 'detectorName', 'detectorBias', 'detectorOptPower', 'sampleName', 'sampleTemp', 'sampleBias', 'sampleOptPower', 'otherDetails'],
 			displays=['scanType','startDelay','stepDelay','stopDelay', 'repeats', 'xpsStage', 'xps2Control', 'xps2Stage', 'xps2Delay', 'xps2Follow', 'lockinControl', 'keithleyControl', 'keithleyVoltage', 'filterControl', 'filterPosition'],
 			x_axis='Delay',
 			y_axis='X',
